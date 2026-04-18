@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+*.db
+*.wav
+*.opus
+*.flac
+config.toml
+!config/config.toml.example
+.DS_Store
+*.egg-info/
+.pytest_cache/
+Archive.zip
+*.zip

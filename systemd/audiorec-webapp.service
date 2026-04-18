@@ -1,0 +1,39 @@
+[Unit]
+Description=Audiorec - web UI (FastAPI)
+After=network-online.target audiorec-recorder.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=audiorec
+Group=audiorec
+WorkingDirectory=/opt/audiorec/src
+Environment=PYTHONPATH=/opt/audiorec/src
+Environment=PYTHONUNBUFFERED=1
+Environment=AUDIOREC_CONFIG=/etc/audiorec/config.toml
+ExecStart=/opt/audiorec/venv/bin/python -m webapp.main
+
+# Allow binding port 80 without running as root.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+Nice=5
+CPUWeight=75
+
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/audiorec
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

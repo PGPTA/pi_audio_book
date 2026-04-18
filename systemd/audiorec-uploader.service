@@ -1,0 +1,37 @@
+[Unit]
+Description=Audiorec - background uploader to Wasabi
+After=network-online.target audiorec-recorder.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=audiorec
+Group=audiorec
+WorkingDirectory=/opt/audiorec/src
+Environment=PYTHONPATH=/opt/audiorec/src
+Environment=PYTHONUNBUFFERED=1
+Environment=AUDIOREC_CONFIG=/etc/audiorec/config.toml
+ExecStart=/opt/audiorec/venv/bin/python -m uploader.main
+
+# Lower priority so the recorder always wins CPU/IO contention.
+Nice=10
+CPUWeight=50
+IOSchedulingClass=idle
+
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/audiorec
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

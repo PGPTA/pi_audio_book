@@ -1,0 +1,73 @@
+# Audiorec configuration
+# Install this file at /etc/audiorec/config.toml (mode 0600, owned by the audiorec user).
+# Run `scripts/hash_password.py` to generate a web_password_hash.
+
+[paths]
+# Where to store the SQLite DB and recorded WAV files.
+data_dir = "/var/lib/audiorec"
+recordings_subdir = "recordings"
+
+[audio]
+# ALSA device for the USB mic. Find with `arecord -l` (look for "card X: ...").
+# e.g. "hw:1,0" means card 1, device 0.
+device = "hw:1,0"
+# Sample rate in Hz. 16000 is speech-grade and tiny; 44100 for music quality.
+sample_rate = 16000
+# Channels: 1 = mono, 2 = stereo.
+channels = 1
+# Sample format passed to arecord.
+format = "S16_LE"
+
+[gpio]
+# BCM pin number for the record/stop button (momentary, wired to GND with pull-up).
+button_pin = 17
+# BCM pin number for the status LED (optional). Set to 0 to disable.
+led_pin = 18
+# Software debounce in seconds.
+debounce_s = 0.05
+# Long-press duration (seconds) that forces a stop as a safety net.
+long_press_s = 3.0
+
+[upload]
+# How often the uploader polls the DB (seconds).
+poll_interval_s = 5
+# How long to keep the local WAV after successful upload (days). Set to 0 to keep forever.
+local_retention_days = 7
+# Opus bitrate for voice. 24k is excellent for speech; bump to 64k for music.
+opus_bitrate = "24k"
+# Multipart upload part size in MB. Smaller = lower peak RAM.
+multipart_part_size_mb = 5
+# Max retry attempts per file before marking failed.
+max_retries = 10
+
+[wasabi]
+# S3-compatible credentials from your Wasabi account.
+access_key = "REPLACE_ME"
+secret_key = "REPLACE_ME"
+# Wasabi endpoint. Match the region where your bucket lives:
+#   us-east-1  -> https://s3.us-east-1.wasabisys.com
+#   us-east-2  -> https://s3.us-east-2.wasabisys.com
+#   us-west-1  -> https://s3.us-west-1.wasabisys.com
+#   eu-central-1 -> https://s3.eu-central-1.wasabisys.com
+#   eu-central-2 -> https://s3.eu-central-2.wasabisys.com
+#   ap-northeast-1 -> https://s3.ap-northeast-1.wasabisys.com
+endpoint_url = "https://s3.us-east-1.wasabisys.com"
+region = "us-east-1"
+bucket = "REPLACE_ME"
+# Optional key prefix (folder) inside the bucket.
+key_prefix = "recordings/"
+
+[web]
+# Bind address for the FastAPI app. 0.0.0.0 = all interfaces.
+host = "0.0.0.0"
+port = 80
+# Username shown on the login form.
+username = "admin"
+# bcrypt hash. Generate with: python3 scripts/hash_password.py
+password_hash = "REPLACE_ME"
+# Random secret used to sign session cookies. Generate with: openssl rand -hex 32
+session_secret = "REPLACE_ME"
+# Session lifetime in seconds (default: 30 days).
+session_lifetime_s = 2592000
+# mDNS hostname (for display only; the actual name comes from /etc/hostname + avahi).
+hostname = "audiorec.local"

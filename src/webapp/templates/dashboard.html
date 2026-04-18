@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Audiorec{% endblock %}
+{% block content %}
+<section class="dashboard">
+  <div class="status-card {% if current %}active{% endif %}">
+    {% if current %}
+      <div class="dot pulse"></div>
+      <div>
+        <div class="status-label">Recording</div>
+        <div class="status-sub">Started {{ current.started_at.strftime("%Y-%m-%d %H:%M:%S UTC") }}</div>
+      </div>
+    {% else %}
+      <div class="dot"></div>
+      <div>
+        <div class="status-label">Idle</div>
+        <div class="status-sub">Press the button to start recording.</div>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="grid">
+    <div class="tile">
+      <div class="tile-value">{{ total }}</div>
+      <div class="tile-label">Total recordings</div>
+    </div>
+    <div class="tile">
+      <div class="tile-value">{{ pending_count }}</div>
+      <div class="tile-label">Upload queue</div>
+    </div>
+    <div class="tile {% if failed_count %}warn{% endif %}">
+      <div class="tile-value">{{ failed_count }}</div>
+      <div class="tile-label">Failed</div>
+    </div>
+    <div class="tile">
+      <div class="tile-value">{{ disk.free | filesizeformat }}</div>
+      <div class="tile-label">Free disk</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Last uploaded</h2>
+    {% if last_uploaded %}
+      <p><strong>{{ last_uploaded.filename }}</strong></p>
+      <p class="sub">
+        at {{ last_uploaded.uploaded_at.strftime("%Y-%m-%d %H:%M:%S UTC") }} -
+        {{ last_uploaded.duration_s | duration }} -
+        {{ last_uploaded.size_bytes | filesizeformat }}
+      </p>
+    {% else %}
+      <p class="sub">No successful uploads yet.</p>
+    {% endif %}
+  </div>
+
+  <p class="sub">Connect from your phone at <code>http://{{ hostname }}</code> while on the same WiFi.</p>
+</section>
+<script>
+  setInterval(async () => {
+    try {
+      const r = await fetch('/api/status', {credentials: 'same-origin'});
+      if (!r.ok) return;
+      const s = await r.json();
+      const badge = document.querySelector('.status-card');
+      if (s.recording && !badge.classList.contains('active')) location.reload();
+      if (!s.recording && badge.classList.contains('active')) location.reload();
+    } catch (_e) { /* ignore */ }
+  }, 5000);
+</script>
+{% endblock %}

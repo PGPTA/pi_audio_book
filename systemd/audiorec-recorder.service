@@ -1,0 +1,39 @@
+[Unit]
+Description=Audiorec - USB mic recorder (button-driven)
+After=sound.target
+Wants=sound.target
+
+[Service]
+Type=simple
+User=audiorec
+Group=audiorec
+SupplementaryGroups=audio gpio
+WorkingDirectory=/opt/audiorec/src
+Environment=PYTHONPATH=/opt/audiorec/src
+Environment=PYTHONUNBUFFERED=1
+Environment=AUDIOREC_CONFIG=/etc/audiorec/config.toml
+ExecStart=/opt/audiorec/venv/bin/python -m recorder.main
+
+# Give the recorder real-time-ish priority so it never drops samples while
+# the uploader is busy encoding/uploading on the other cores.
+Nice=-5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=2
+
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/audiorec
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

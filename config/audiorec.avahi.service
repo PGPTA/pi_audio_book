@@ -1,0 +1,18 @@
+<?xml version="1.0" standalone='no'?>
+<!--
+  Install at /etc/avahi/services/audiorec.service so the Pi advertises
+  its web UI on the local network via mDNS. Your phone (iOS/Android)
+  will resolve http://<hostname>.local thanks to this.
+
+  The hostname is whatever is in /etc/hostname (the installer sets it
+  to "audiorec" by default). Change that if you want a different name.
+-->
+<!DOCTYPE service-group SYSTEM "avahi.dtd">
+<service-group>
+  <name replace-wildcards="yes">Audiorec on %h</name>
+  <service>
+    <type>_http._tcp</type>
+    <port>80</port>
+    <txt-record>path=/</txt-record>
+  </service>
+</service-group>

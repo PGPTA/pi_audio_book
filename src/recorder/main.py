@@ -1,0 +1,235 @@
+"""Recorder service: a GPIO button toggles an `arecord` subprocess.
+
+Design goals:
+- Tiny and robust. If the uploader or webapp crashes, recording keeps working.
+- No audio data is held in Python memory; `arecord` writes the WAV directly to disk.
+- SIGINT (not SIGKILL) on stop so arecord can finalize the WAV header cleanly.
+- Long-press acts as a safety stop in case the toggle state ever drifts.
+
+Run as: `python -m recorder.main` from /opt/audiorec/src (see systemd unit).
+"""
+from __future__ import annotations
+
+import logging
+import os
+import signal
+import subprocess
+import sys
+import threading
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+from common import db
+from common.config import Config, load_config
+
+
+log = logging.getLogger("audiorec.recorder")
+
+
+@dataclass
+class ActiveRecording:
+    rec_id: str
+    path: Path
+    proc: subprocess.Popen
+    started_monotonic: float
+
+
+class Recorder:
+    """Owns at most one active arecord subprocess and a matching DB row."""
+
+    def __init__(self, cfg: Config) -> None:
+        self.cfg = cfg
+        self.conn = db.connect(cfg.paths.db_path)
+        self._lock = threading.Lock()
+        self._active: Optional[ActiveRecording] = None
+        self._stopping = False
+
+        cfg.paths.recordings_dir.mkdir(parents=True, exist_ok=True)
+
+        orphaned = db.reset_orphaned_on_startup(self.conn)
+        if orphaned:
+            log.warning("Recovered %d orphaned 'recording' rows from previous crash", orphaned)
+
+    # --- public API (called by button handler and signal handlers) ---
+
+    def toggle(self) -> None:
+        """One button press: start if idle, stop if recording."""
+        with self._lock:
+            if self._active is None:
+                self._start_locked()
+            else:
+                self._stop_locked()
+
+    def force_stop(self) -> None:
+        """Long-press safety net: always stops if recording."""
+        with self._lock:
+            if self._active is not None:
+                log.warning("Force-stop triggered by long press")
+                self._stop_locked()
+
+    def shutdown(self) -> None:
+        """Gracefully stop any active recording on service exit."""
+        self._stopping = True
+        with self._lock:
+            if self._active is not None:
+                log.info("Shutdown: stopping active recording")
+                self._stop_locked()
+        try:
+            self.conn.close()
+        except Exception:
+            pass
+
+    # --- internals (must hold self._lock) ---
+
+    def _start_locked(self) -> None:
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        filename = f"{ts}.wav"
+        path = self.cfg.paths.recordings_dir / filename
+
+        rec = db.create_recording(self.conn, filename)
+
+        cmd = [
+            "arecord",
+            "-q",
+            "-D", self.cfg.audio.device,
+            "-f", self.cfg.audio.format,
+            "-r", str(self.cfg.audio.sample_rate),
+            "-c", str(self.cfg.audio.channels),
+            "-t", "wav",
+            str(path),
+        ]
+        log.info("Starting recording %s -> %s", rec.id, path)
+        log.debug("arecord cmd: %s", " ".join(cmd))
+
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        self._active = ActiveRecording(
+            rec_id=rec.id,
+            path=path,
+            proc=proc,
+            started_monotonic=time.monotonic(),
+        )
+        _fire_led(self.cfg.gpio.led_pin, on=True)
+
+    def _stop_locked(self) -> None:
+        active = self._active
+        assert active is not None
+        self._active = None
+
+        duration = time.monotonic() - active.started_monotonic
+
+        # SIGINT lets arecord write a proper RIFF size in the WAV header.
+        try:
+            active.proc.send_signal(signal.SIGINT)
+        except ProcessLookupError:
+            pass
+
+        try:
+            _, stderr = active.proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            log.warning("arecord did not exit after SIGINT, killing")
+            active.proc.kill()
+            _, stderr = active.proc.communicate()
+
+        if active.proc.returncode not in (0, -signal.SIGINT, 130):
+            err_text = (stderr or b"").decode("utf-8", errors="replace").strip()
+            log.error("arecord exited %s: %s", active.proc.returncode, err_text)
+
+        try:
+            size = active.path.stat().st_size
+        except FileNotFoundError:
+            size = 0
+            log.error("Recording file missing after stop: %s", active.path)
+
+        db.finish_recording(self.conn, active.rec_id, duration_s=duration, size_bytes=size)
+        log.info("Stopped recording %s (%.1fs, %d bytes)", active.rec_id, duration, size)
+        _fire_led(self.cfg.gpio.led_pin, on=False)
+
+
+def _fire_led(pin: int, on: bool) -> None:
+    """Best-effort LED toggle; ignore if gpiozero not ready or pin disabled."""
+    if pin <= 0:
+        return
+    try:
+        from gpiozero import LED  # imported lazily so this module is testable
+        led = _led_cache.get(pin)
+        if led is None:
+            led = LED(pin)
+            _led_cache[pin] = led
+        if on:
+            led.on()
+        else:
+            led.off()
+    except Exception as e:  # pragma: no cover - hardware-only path
+        log.debug("LED toggle failed: %s", e)
+
+
+_led_cache: dict[int, object] = {}
+
+
+def _install_signal_handlers(recorder: Recorder) -> None:
+    def _graceful(signum, _frame):
+        log.info("Received signal %s, shutting down", signum)
+        recorder.shutdown()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, _graceful)
+    signal.signal(signal.SIGTERM, _graceful)
+
+
+def _setup_button(cfg: Config, recorder: Recorder) -> None:
+    """Wire a momentary button to the recorder's toggle/force_stop."""
+    from gpiozero import Button  # imported lazily for non-Pi test environments
+
+    button = Button(
+        cfg.gpio.button_pin,
+        pull_up=True,
+        bounce_time=cfg.gpio.debounce_s,
+        hold_time=cfg.gpio.long_press_s,
+    )
+    button.when_pressed = lambda: recorder.toggle()
+    button.when_held = lambda: recorder.force_stop()
+
+    # Keep a reference so the Button isn't garbage-collected.
+    global _button_ref
+    _button_ref = button
+
+
+_button_ref: Optional[object] = None
+
+
+def main() -> int:
+    logging.basicConfig(
+        level=os.environ.get("AUDIOREC_LOG", "INFO"),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    cfg = load_config()
+    recorder = Recorder(cfg)
+    _install_signal_handlers(recorder)
+    _setup_button(cfg, recorder)
+
+    log.info(
+        "Recorder ready. Button on GPIO%d, device=%s, %dHz %dch",
+        cfg.gpio.button_pin,
+        cfg.audio.device,
+        cfg.audio.sample_rate,
+        cfg.audio.channels,
+    )
+
+    # Block forever; gpiozero runs callbacks on its own thread.
+    try:
+        signal.pause()
+    except KeyboardInterrupt:
+        recorder.shutdown()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

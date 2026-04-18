@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Audiorec{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="/" class="brand">Audiorec</a>
+    <nav>
+      <a href="/">Dashboard</a>
+      <a href="/recordings">Recordings</a>
+      <form method="post" action="/logout" class="logout-form">
+        <button type="submit" class="link-btn">Sign out</button>
+      </form>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
