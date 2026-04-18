@@ -4,7 +4,7 @@ A tiny appliance for a **Raspberry Pi Zero 2 WH** that:
 
 - Records from a **USB microphone** when you press a **button**, and stops when you press it again.
 - Saves recordings to the SD card as WAV.
-- In the background, encodes each recording to **Opus** and uploads it to **Wasabi** (S3-compatible).
+- In the background, encodes each recording to **Opus** and uploads it to any **S3-compatible** object store (Backblaze B2, Cloudflare R2, Wasabi, DigitalOcean Spaces, AWS S3, MinIO, ...).
 - Serves a **password-protected web UI** you can open on your phone over the local WiFi to see status and play back recordings.
 - Falls back to an **open WiFi access point + captive portal** for first-boot WiFi setup (via [comitup](https://github.com/davesteele/comitup)).
 
@@ -79,12 +79,23 @@ card 1: Device [USB PnP Sound Device], device 0: USB Audio [USB Audio]
 
 That means your device is `hw:1,0`.
 
-### 5. Create your Wasabi bucket
+### 5. Create your cloud bucket
 
-1. Log in to [console.wasabisys.com](https://console.wasabisys.com).
-2. Create a new **private** bucket (any region; pick one close to the Pi).
-3. Under **Access Keys**, create a new key pair and save both the access key and secret key.
-4. Note the endpoint for your bucket's region — e.g. `https://s3.us-east-1.wasabisys.com`.
+Any S3-compatible provider works. Recommended:
+
+**Backblaze B2** (free for 10 GB, friendliest setup)
+
+1. Sign up / sign in at [secure.backblaze.com](https://secure.backblaze.com/user_signin.htm).
+2. **Buckets → Create a Bucket**: pick a globally-unique name, Files in Bucket = **Private**, Default Encryption = **Enable**.
+3. Note the **Endpoint** shown on the bucket's page (e.g. `s3.us-west-004.backblazeb2.com`). The region is the piece after `s3.` (e.g. `us-west-004`).
+4. **Application Keys → Add a New Application Key** scoped to **just this bucket**, Type = **Read and Write**. Copy the `keyID` and `applicationKey` — the secret is shown only once.
+
+**Alternatives** (all work identically; just different endpoints):
+
+- **Cloudflare R2**: 10 GB free forever, zero egress. Endpoint: `https://<account-id>.r2.cloudflarestorage.com`, region: `auto`.
+- **Wasabi**: $7/TB flat. Endpoint: `https://s3.<region>.wasabisys.com`.
+- **DigitalOcean Spaces**: $5/mo for 250 GB. Endpoint: `https://<region>.digitaloceanspaces.com`.
+- **MinIO / self-hosted**: point `endpoint_url` at your server.
 
 ### 6. Generate a web password and session secret
 
@@ -103,7 +114,7 @@ sudo nano /etc/audiorec/config.toml
 Fill in:
 
 - `[audio].device` — e.g. `"hw:1,0"`
-- `[wasabi].access_key`, `secret_key`, `bucket`, `endpoint_url`, `region`
+- `[wasabi].access_key`, `secret_key`, `bucket`, `endpoint_url`, `region` (section is named `wasabi` for legacy reasons but works with any S3-compatible provider)
 - `[web].password_hash` — from step 6
 - `[web].session_secret` — from step 6
 
@@ -166,14 +177,14 @@ After that, open `http://audiorec.local` on your phone.
                               │ PUT Opus                │
                               ▼                         ▼
                          ┌──────────┐              http://audiorec.local
-                         │  Wasabi  │              (phone on same WiFi)
-                         │  bucket  │
+                         │  S3-like │              (phone on same WiFi)
+                         │  bucket  │              (B2 / R2 / Wasabi / ...)
                          └──────────┘
 ```
 
 Why three services instead of one process?
 
-- The recorder is the only thing that must never stall. Running it alone in a minimal process with higher CPU/IO priority (`Nice=-5`) means a long Wasabi upload, a web request, or a transient crash in another component can never cost you audio.
+- The recorder is the only thing that must never stall. Running it alone in a minimal process with higher CPU/IO priority (`Nice=-5`) means a long cloud upload, a web request, or a transient crash in another component can never cost you audio.
 - The uploader runs `Nice=10` + `IOSchedulingClass=idle`, so it only uses CPU/IO when nobody else wants them.
 - The web UI only does work when you load a page.
 
@@ -251,7 +262,7 @@ Something else is holding the mic. Check `sudo fuser -v /dev/snd/*`. Usually res
 Regenerate the password hash with `scripts/hash_password.py` and make sure you pasted the *entire* hash string into `config.toml` (bcrypt hashes start with `$2b$`).
 
 **Uploads stuck at "pending_upload"**  
-Check `journalctl -u audiorec-uploader -n 50`. Usual suspects: wrong Wasabi credentials, wrong endpoint URL for the bucket's region, or no internet.
+Check `journalctl -u audiorec-uploader -n 50`. Usual suspects: wrong access key / secret, wrong endpoint URL for the bucket's region, application key not scoped to your bucket (B2), or no internet.
 
 **Phone can't reach `audiorec.local`**  
 Some Android phones don't resolve `.local`. Fall back to the IP: find it with `hostname -I` on the Pi.

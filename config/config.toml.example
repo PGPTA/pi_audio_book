@@ -40,19 +40,33 @@ multipart_part_size_mb = 5
 # Max retry attempts per file before marking failed.
 max_retries = 10
 
+# S3-compatible object storage. The section is named [wasabi] for historical
+# reasons but works with ANY S3-compatible provider (Backblaze B2, Cloudflare
+# R2, Wasabi, DigitalOcean Spaces, AWS S3, MinIO, ...). Set endpoint_url and
+# region to match your provider.
 [wasabi]
-# S3-compatible credentials from your Wasabi account.
 access_key = "REPLACE_ME"
 secret_key = "REPLACE_ME"
-# Wasabi endpoint. Match the region where your bucket lives:
-#   us-east-1  -> https://s3.us-east-1.wasabisys.com
-#   us-east-2  -> https://s3.us-east-2.wasabisys.com
-#   us-west-1  -> https://s3.us-west-1.wasabisys.com
-#   eu-central-1 -> https://s3.eu-central-1.wasabisys.com
-#   eu-central-2 -> https://s3.eu-central-2.wasabisys.com
-#   ap-northeast-1 -> https://s3.ap-northeast-1.wasabisys.com
-endpoint_url = "https://s3.us-east-1.wasabisys.com"
-region = "us-east-1"
+
+# --- Backblaze B2 (recommended) ---
+# Find the endpoint on your bucket's page, e.g. "s3.us-west-004.backblazeb2.com"
+# Region is the same string after "s3." (e.g. "us-west-004").
+# Create an application key scoped to your bucket at:
+#   https://secure.backblaze.com/app_keys.htm
+endpoint_url = "https://s3.us-west-004.backblazeb2.com"
+region = "us-west-004"
+
+# --- Alternatives (uncomment one set) ---
+# Cloudflare R2 (free up to 10 GB, zero egress):
+#   endpoint_url = "https://<account-id>.r2.cloudflarestorage.com"
+#   region = "auto"
+# Wasabi:
+#   endpoint_url = "https://s3.us-east-1.wasabisys.com"
+#   region = "us-east-1"
+# DigitalOcean Spaces:
+#   endpoint_url = "https://nyc3.digitaloceanspaces.com"
+#   region = "nyc3"
+
 bucket = "REPLACE_ME"
 # Optional key prefix (folder) inside the bucket.
 key_prefix = "recordings/"

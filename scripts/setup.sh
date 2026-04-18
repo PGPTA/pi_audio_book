@@ -109,14 +109,50 @@ while true; do
 done
 
 echo
-c_bold "Wasabi credentials"
-echo "Create a bucket and access key at https://console.wasabisys.com if you haven't."
-WASABI_ACCESS="$(ask "Wasabi access key")"
-WASABI_SECRET="$(ask_secret "Wasabi secret key")"
-WASABI_BUCKET="$(ask "Wasabi bucket name")"
-WASABI_REGION="$(ask "Wasabi region" "us-east-1")"
-WASABI_ENDPOINT_DEFAULT="https://s3.${WASABI_REGION}.wasabisys.com"
-WASABI_ENDPOINT="$(ask "Wasabi endpoint URL" "$WASABI_ENDPOINT_DEFAULT")"
+c_bold "Cloud storage (S3-compatible)"
+echo "Pick your provider:"
+echo "  1) Backblaze B2        (recommended, 10 GB free)"
+echo "  2) Cloudflare R2       (10 GB free, zero egress)"
+echo "  3) Wasabi              (\$7/TB, 90-day min storage)"
+echo "  4) DigitalOcean Spaces"
+echo "  5) Custom / other S3-compatible"
+PROVIDER_CHOICE="$(ask "Choice" "1")"
+
+case "$PROVIDER_CHOICE" in
+    1)
+        echo "Create a bucket + application key at https://secure.backblaze.com"
+        echo "(Use the bucket's Endpoint, e.g. 's3.us-west-004.backblazeb2.com'.)"
+        WASABI_REGION_DEFAULT="us-west-004"
+        WASABI_REGION="$(ask "B2 region (from your bucket's endpoint)" "$WASABI_REGION_DEFAULT")"
+        WASABI_ENDPOINT_DEFAULT="https://s3.${WASABI_REGION}.backblazeb2.com"
+        ;;
+    2)
+        echo "Create a bucket + API token at https://dash.cloudflare.com -> R2"
+        echo "Your endpoint looks like 'https://<account-id>.r2.cloudflarestorage.com'."
+        ACCOUNT_ID="$(ask "R2 Account ID")"
+        WASABI_REGION="auto"
+        WASABI_ENDPOINT_DEFAULT="https://${ACCOUNT_ID}.r2.cloudflarestorage.com"
+        ;;
+    3)
+        echo "Create a bucket + access key at https://console.wasabisys.com"
+        WASABI_REGION="$(ask "Wasabi region" "us-east-1")"
+        WASABI_ENDPOINT_DEFAULT="https://s3.${WASABI_REGION}.wasabisys.com"
+        ;;
+    4)
+        echo "Create a Space + access key at https://cloud.digitalocean.com/spaces"
+        WASABI_REGION="$(ask "DO region" "nyc3")"
+        WASABI_ENDPOINT_DEFAULT="https://${WASABI_REGION}.digitaloceanspaces.com"
+        ;;
+    *)
+        WASABI_REGION="$(ask "Region")"
+        WASABI_ENDPOINT_DEFAULT=""
+        ;;
+esac
+
+WASABI_ENDPOINT="$(ask "Endpoint URL" "$WASABI_ENDPOINT_DEFAULT")"
+WASABI_ACCESS="$(ask "Access key ID")"
+WASABI_SECRET="$(ask_secret "Secret access key")"
+WASABI_BUCKET="$(ask "Bucket name")"
 WASABI_PREFIX="$(ask "Key prefix (folder) inside the bucket" "recordings/")"
 
 echo
