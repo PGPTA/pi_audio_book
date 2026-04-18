@@ -2,33 +2,40 @@
 {% block title %}Dashboard - Audiorec{% endblock %}
 {% block content %}
 <section class="dashboard">
-  <div class="status-card {% if current %}active{% endif %}">
-    {% if current %}
-      <div class="dot pulse"></div>
-      <div>
-        <div class="status-label">Recording</div>
-        <div class="status-sub">Started {{ current.started_at.strftime("%Y-%m-%d %H:%M:%S UTC") }}</div>
+  <div class="status-card {% if current %}active{% endif %}" id="statusCard">
+    <div class="dot {% if current %}pulse{% endif %}" id="statusDot"></div>
+    <div>
+      <div class="status-label" id="statusLabel">{% if current %}Recording{% else %}Idle{% endif %}</div>
+      <div class="status-sub" id="statusSub">
+        {% if current %}
+          Started {{ current.started_at.strftime("%Y-%m-%d %H:%M:%S UTC") }}
+        {% else %}
+          Press the button to start recording.
+        {% endif %}
       </div>
-    {% else %}
-      <div class="dot"></div>
-      <div>
-        <div class="status-label">Idle</div>
-        <div class="status-sub">Press the button to start recording.</div>
-      </div>
-    {% endif %}
+    </div>
   </div>
+
+  <button id="toggleBtn"
+          class="toggle-btn {% if current %}is-recording{% endif %}"
+          data-recording="{{ 'true' if current else 'false' }}">
+    <span class="toggle-icon"></span>
+    <span class="toggle-text">
+      {% if current %}Stop recording{% else %}Start recording{% endif %}
+    </span>
+  </button>
 
   <div class="grid">
     <div class="tile">
-      <div class="tile-value">{{ total }}</div>
+      <div class="tile-value" id="tileTotal">{{ total }}</div>
       <div class="tile-label">Total recordings</div>
     </div>
     <div class="tile">
-      <div class="tile-value">{{ pending_count }}</div>
+      <div class="tile-value" id="tilePending">{{ pending_count }}</div>
       <div class="tile-label">Upload queue</div>
     </div>
-    <div class="tile {% if failed_count %}warn{% endif %}">
-      <div class="tile-value">{{ failed_count }}</div>
+    <div class="tile {% if failed_count %}warn{% endif %}" id="tileFailedWrap">
+      <div class="tile-value" id="tileFailed">{{ failed_count }}</div>
       <div class="tile-label">Failed</div>
     </div>
     <div class="tile">
@@ -53,16 +60,74 @@
 
   <p class="sub">Connect from your phone at <code>http://{{ hostname }}</code> while on the same WiFi.</p>
 </section>
+
 <script>
+(function() {
+  const btn = document.getElementById('toggleBtn');
+  const card = document.getElementById('statusCard');
+  const label = document.getElementById('statusLabel');
+  const sub = document.getElementById('statusSub');
+  const dot = document.getElementById('statusDot');
+  const tilePending = document.getElementById('tilePending');
+  const tileTotal = document.getElementById('tileTotal');
+  const tileFailed = document.getElementById('tileFailed');
+  const tileFailedWrap = document.getElementById('tileFailedWrap');
+
+  function applyRecordingState(recording) {
+    btn.dataset.recording = recording ? 'true' : 'false';
+    btn.classList.toggle('is-recording', recording);
+    btn.querySelector('.toggle-text').textContent =
+      recording ? 'Stop recording' : 'Start recording';
+    card.classList.toggle('active', recording);
+    dot.classList.toggle('pulse', recording);
+    label.textContent = recording ? 'Recording' : 'Idle';
+    if (recording) {
+      sub.textContent = 'Recording in progress - press again to stop.';
+    } else {
+      sub.textContent = 'Press the button to start recording.';
+    }
+  }
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.classList.add('is-busy');
+    try {
+      const r = await fetch('/api/toggle', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {'Accept': 'application/json'},
+      });
+      if (!r.ok) {
+        const txt = await r.text();
+        alert('Toggle failed: ' + (txt || r.status));
+        return;
+      }
+      const data = await r.json();
+      applyRecordingState(!!data.recording);
+    } catch (e) {
+      alert('Network error: ' + e);
+    } finally {
+      btn.disabled = false;
+      btn.classList.remove('is-busy');
+    }
+  });
+
+  // Live status polling so the UI reflects physical-button presses too.
   setInterval(async () => {
     try {
       const r = await fetch('/api/status', {credentials: 'same-origin'});
       if (!r.ok) return;
       const s = await r.json();
-      const badge = document.querySelector('.status-card');
-      if (s.recording && !badge.classList.contains('active')) location.reload();
-      if (!s.recording && badge.classList.contains('active')) location.reload();
-    } catch (_e) { /* ignore */ }
-  }, 5000);
+      const wasRecording = btn.dataset.recording === 'true';
+      if (!!s.recording !== wasRecording) {
+        applyRecordingState(!!s.recording);
+      }
+      tilePending.textContent = s.pending;
+      tileTotal.textContent = s.total;
+      tileFailed.textContent = s.failed;
+      tileFailedWrap.classList.toggle('warn', s.failed > 0);
+    } catch (_e) { /* ignore transient errors */ }
+  }, 3000);
+})();
 </script>
 {% endblock %}

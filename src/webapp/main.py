@@ -10,7 +10,9 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import signal
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -214,6 +216,27 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         db.delete_recording(conn, rec.id)
         return RedirectResponse(url="/recordings", status_code=status.HTTP_303_SEE_OTHER)
 
+    @app.post("/api/toggle")
+    def api_toggle(conn=Depends(get_conn), _user: str = Depends(require_user)):
+        """Signal the recorder to start/stop - same effect as the physical button."""
+        pid = _read_recorder_pid(cfg.paths.data_dir / "recorder.pid")
+        if pid is None:
+            raise HTTPException(status_code=503, detail="recorder not running")
+        try:
+            os.kill(pid, signal.SIGUSR1)
+        except ProcessLookupError:
+            raise HTTPException(status_code=503, detail="recorder process is gone")
+        except PermissionError:
+            raise HTTPException(status_code=503, detail="permission denied signalling recorder")
+
+        # Give the recorder a moment to flip state, then report the new status.
+        time.sleep(0.4)
+        current = db.current_recording(conn)
+        return {
+            "recording": current is not None,
+            "current_id": current.id if current else None,
+        }
+
     @app.get("/api/status")
     def api_status(conn=Depends(get_conn), _user: str = Depends(require_user)):
         current = db.current_recording(conn)
@@ -241,6 +264,20 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         )
 
     return app
+
+
+def _read_recorder_pid(pidfile: Path) -> Optional[int]:
+    """Best-effort PID read. Returns None if pidfile missing or stale."""
+    try:
+        pid = int(pidfile.read_text().strip())
+    except (FileNotFoundError, ValueError):
+        return None
+    # Verify the process actually exists (pidfile could be stale after a crash).
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, PermissionError):
+        return None
+    return pid
 
 
 def _disk_usage(path: Path) -> dict:

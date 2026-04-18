@@ -180,8 +180,24 @@ def _install_signal_handlers(recorder: Recorder) -> None:
         recorder.shutdown()
         sys.exit(0)
 
+    def _toggle_signal(_signum, _frame):
+        log.info("SIGUSR1 received -> toggle")
+        try:
+            recorder.toggle()
+        except Exception:
+            log.exception("toggle via signal failed")
+
+    def _force_stop_signal(_signum, _frame):
+        log.info("SIGUSR2 received -> force_stop")
+        try:
+            recorder.force_stop()
+        except Exception:
+            log.exception("force_stop via signal failed")
+
     signal.signal(signal.SIGINT, _graceful)
     signal.signal(signal.SIGTERM, _graceful)
+    signal.signal(signal.SIGUSR1, _toggle_signal)
+    signal.signal(signal.SIGUSR2, _force_stop_signal)
 
 
 def _setup_button(cfg: Config, recorder: Recorder) -> None:
@@ -215,19 +231,30 @@ def main() -> int:
     _install_signal_handlers(recorder)
     _setup_button(cfg, recorder)
 
+    # Write our PID so the webapp can signal us (SIGUSR1 = toggle).
+    pidfile = cfg.paths.data_dir / "recorder.pid"
+    pidfile.parent.mkdir(parents=True, exist_ok=True)
+    pidfile.write_text(str(os.getpid()))
+
     log.info(
-        "Recorder ready. Button on GPIO%d, device=%s, %dHz %dch",
+        "Recorder ready. Button on GPIO%d, device=%s, %dHz %dch, pid=%d",
         cfg.gpio.button_pin,
         cfg.audio.device,
         cfg.audio.sample_rate,
         cfg.audio.channels,
+        os.getpid(),
     )
 
-    # Block forever; gpiozero runs callbacks on its own thread.
     try:
+        # Block forever; gpiozero runs callbacks on its own thread, signals wake us.
         signal.pause()
     except KeyboardInterrupt:
         recorder.shutdown()
+    finally:
+        try:
+            pidfile.unlink()
+        except FileNotFoundError:
+            pass
     return 0
 
 

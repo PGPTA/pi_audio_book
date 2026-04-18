@@ -54,36 +54,81 @@ c_info "Step 1/6: installing apt packages, user, venv, systemd units"
 bash "$REPO_DIR/scripts/install.sh"
 
 # --- 2. detect USB mic ----------------------------------------------------
-c_info "Step 2/6: detecting USB microphone"
+c_info "Step 2/6: detecting microphones"
 if ! command -v arecord >/dev/null; then
     c_warn "arecord not found; install failed?"
     exit 1
 fi
 
-MIC_LIST="$(arecord -l 2>/dev/null || true)"
-echo "$MIC_LIST"
-echo
+# Gather all capture-capable cards, skipping the Pi's built-in bcm2835.
+#
+# `arecord -l` lines look like:
+#   card 1: Device [USB PnP Sound Device], device 0: USB Audio [USB Audio]
+#
+# We want the hw:CARD,DEVICE id plus a friendly name.
+declare -a MIC_DEVICES=()  # e.g. "hw:1,0"
+declare -a MIC_LABELS=()   # e.g. "USB PnP Sound Device (USB Audio)"
 
-# Pick first card that looks like USB (skip bcm2835 builtins).
-DETECTED_DEVICE=""
 while IFS= read -r line; do
-    if [[ "$line" =~ ^card\ ([0-9]+):\ ([^[:space:]]+).*device\ ([0-9]+): ]]; then
+    if [[ "$line" =~ ^card[[:space:]]+([0-9]+):[[:space:]]+([^[:space:]]+)[[:space:]]+\[([^\]]+)\],[[:space:]]+device[[:space:]]+([0-9]+):[[:space:]]+[^[]*\[([^\]]+)\] ]]; then
         card="${BASH_REMATCH[1]}"
-        name="${BASH_REMATCH[2]}"
-        dev="${BASH_REMATCH[3]}"
-        if [[ ! "$name" =~ [Bb]cm ]]; then
-            DETECTED_DEVICE="hw:${card},${dev}"
-            break
+        card_id="${BASH_REMATCH[2]}"
+        card_name="${BASH_REMATCH[3]}"
+        dev="${BASH_REMATCH[4]}"
+        dev_name="${BASH_REMATCH[5]}"
+        # Skip the Pi's built-in bcm283x audio (headphones/HDMI), not a mic.
+        if [[ "$card_id" =~ [Bb]cm ]] || [[ "$card_name" =~ [Bb]cm ]]; then
+            continue
         fi
+        MIC_DEVICES+=("hw:${card},${dev}")
+        MIC_LABELS+=("${card_name} - ${dev_name}")
     fi
-done <<< "$MIC_LIST"
+done < <(arecord -l 2>/dev/null || true)
 
-if [[ -z "$DETECTED_DEVICE" ]]; then
-    c_warn "Could not auto-detect a USB mic. Plug it in and re-run, or enter manually."
-    DETECTED_DEVICE="hw:1,0"
+echo
+case "${#MIC_DEVICES[@]}" in
+    0)
+        c_warn "No USB microphone detected."
+        echo "Available capture cards:"
+        arecord -l 2>/dev/null || echo "  (none)"
+        echo
+        echo "Plug in a USB mic and re-run, or enter a device manually."
+        AUDIO_DEVICE="$(ask "ALSA device (format: hw:CARD,DEVICE)" "hw:1,0")"
+        ;;
+    1)
+        AUDIO_DEVICE="${MIC_DEVICES[0]}"
+        c_ok "Detected: $AUDIO_DEVICE  (${MIC_LABELS[0]})"
+        CONFIRM="$(ask "Use this mic?" "y")"
+        if [[ "$CONFIRM" =~ ^[Nn] ]]; then
+            AUDIO_DEVICE="$(ask "Enter ALSA device manually" "$AUDIO_DEVICE")"
+        fi
+        ;;
+    *)
+        echo "Multiple capture devices found:"
+        for i in "${!MIC_DEVICES[@]}"; do
+            printf "  %d) %-12s  %s\n" $((i+1)) "${MIC_DEVICES[$i]}" "${MIC_LABELS[$i]}"
+        done
+        echo "  $(( ${#MIC_DEVICES[@]} + 1 ))) enter manually"
+        PICK="$(ask "Choose [1-$(( ${#MIC_DEVICES[@]} + 1 ))]" "1")"
+        if [[ "$PICK" =~ ^[0-9]+$ ]] && (( PICK >= 1 && PICK <= ${#MIC_DEVICES[@]} )); then
+            AUDIO_DEVICE="${MIC_DEVICES[$((PICK-1))]}"
+        else
+            AUDIO_DEVICE="$(ask "Enter ALSA device manually" "${MIC_DEVICES[0]}")"
+        fi
+        ;;
+esac
+
+# Quick 1-second capture test so we fail fast if something's wrong.
+c_info "Testing $AUDIO_DEVICE with a 1-second capture..."
+if arecord -q -D "$AUDIO_DEVICE" -f S16_LE -r 16000 -c 1 -d 1 /dev/null >/dev/null 2>&1; then
+    c_ok "Mic works"
+else
+    c_warn "Capture test failed - the mic may be busy, unplugged, or need a different format."
+    KEEP="$(ask "Proceed with $AUDIO_DEVICE anyway?" "y")"
+    if [[ "$KEEP" =~ ^[Nn] ]]; then
+        AUDIO_DEVICE="$(ask "Enter a different ALSA device" "$AUDIO_DEVICE")"
+    fi
 fi
-
-AUDIO_DEVICE="$(ask "ALSA device for the USB mic" "$DETECTED_DEVICE")"
 
 # --- 3. interactive config ------------------------------------------------
 c_info "Step 3/6: configuring"
