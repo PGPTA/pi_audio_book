@@ -89,7 +89,24 @@ AUDIO_DEVICE="$(ask "ALSA device for the USB mic" "$DETECTED_DEVICE")"
 c_info "Step 3/6: configuring"
 
 HOSTNAME_DEFAULT="audiorec"
-NEW_HOSTNAME="$(ask "mDNS hostname (your phone will use http://<name>.local)" "$HOSTNAME_DEFAULT")"
+while true; do
+    RAW_HOSTNAME="$(ask "Short hostname (just a name, e.g. 'audiorec' - no http, no .local, no slashes)" "$HOSTNAME_DEFAULT")"
+    # Normalize: strip whitespace, drop any leading http(s)://, drop .local suffix, lowercase.
+    NEW_HOSTNAME="$(printf '%s' "$RAW_HOSTNAME" | tr '[:upper:]' '[:lower:]' | sed -E 's#^[[:space:]]+|[[:space:]]+$##g; s#^https?://##; s#/.*$##; s#\.local$##')"
+    if [[ -z "$NEW_HOSTNAME" ]]; then
+        c_warn "Hostname cannot be empty."
+        continue
+    fi
+    # RFC-1123 short hostname: letters, digits, hyphens; must not start or end with hyphen; <=63 chars.
+    if [[ ! "$NEW_HOSTNAME" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+        c_warn "Invalid hostname '$NEW_HOSTNAME'. Use letters, digits, and hyphens only."
+        continue
+    fi
+    if [[ "$NEW_HOSTNAME" != "$RAW_HOSTNAME" ]]; then
+        c_info "Using '$NEW_HOSTNAME' (normalized from '$RAW_HOSTNAME')"
+    fi
+    break
+done
 
 echo
 c_bold "Wasabi credentials"
@@ -189,12 +206,15 @@ c_info "Step 5/6: setting system hostname to '$NEW_HOSTNAME'"
 CURRENT_HOSTNAME="$(hostname)"
 if [[ "$CURRENT_HOSTNAME" != "$NEW_HOSTNAME" ]]; then
     hostnamectl set-hostname "$NEW_HOSTNAME"
-    # Also update /etc/hosts so `sudo` stays quick.
-    if grep -q "127.0.1.1" /etc/hosts; then
-        sed -i "s/^127.0.1.1.*/127.0.1.1\t$NEW_HOSTNAME/" /etc/hosts
-    else
-        echo -e "127.0.1.1\t$NEW_HOSTNAME" >> /etc/hosts
-    fi
+    # Rewrite /etc/hosts safely (no sed: avoids any issue with characters in
+    # the hostname, and handles both "line exists" and "line missing" cases).
+    awk -v h="$NEW_HOSTNAME" '
+        BEGIN { done = 0 }
+        /^127\.0\.1\.1[[:space:]]/ { print "127.0.1.1\t" h; done = 1; next }
+        /^127\.0\.1\.1$/           { print "127.0.1.1\t" h; done = 1; next }
+        { print }
+        END { if (!done) print "127.0.1.1\t" h }
+    ' /etc/hosts > /etc/hosts.audiorec.new && mv /etc/hosts.audiorec.new /etc/hosts
     systemctl restart avahi-daemon || true
 fi
 
