@@ -152,6 +152,109 @@ sudo bash scripts/uninstall.sh --purge
 
 ---
 
+## Improving audio quality
+
+The Pi Zero 2 W is loud — electrically. Its WiFi radio, SD card activity, USB bus, and PSU all radiate noise into any nearby unshielded wires, and a cheap USB mic right next to the board picks up most of it as "digital sound": high-pitched whine, clicks, hum, or hiss.
+
+The biggest wins are on the **hardware** side. Start there. The software filter chain (below) cleans up what's left.
+
+### Hardware checklist (in rough order of effect)
+
+1. **Use a decent power supply.** The official Raspberry Pi 27 W or 15 W USB-C / micro-USB PSU gives you a clean 5 V rail. A dodgy phone charger is the #1 cause of a nasty whine that rises and falls with CPU load.
+2. **Powered USB hub between the Pi and the mic.** This is the single most effective fix for "digital sound" — it decouples the mic's power from the Pi's noisy 5 V rail. A £5 hub works.
+3. **Move the mic away from the Pi.** Even 20–30 cm helps a lot. Keep the mic cable away from the Pi's top-left corner (that's where the WiFi antenna sits). A longer shielded USB cable is worth it.
+4. **Ferrite chokes (clamp-on toroids).** Snap one on the mic's USB cable near the Pi end, another on the Pi's power cable. £2 each. Especially effective against RF whine.
+5. **Check grounding.** If your mic has a metal body and you can feel the Pi board through its case, you might have a ground loop. Insulating the Pi's case or using a powered hub (which breaks the loop) fixes it.
+6. **If nothing else works, the mic itself is probably the problem.** Really cheap USB mics have poorly shielded ADCs. Clean/cheap options that are well-regarded: Fifine K669B, Fifine K053, Samson Go Mic, MXL AC-404. Avoid generic "mini USB mic on a stubby stalk" products — those are the worst offenders.
+
+### Software: ffmpeg filter chain
+
+Our encoder pipes the raw WAV through an ffmpeg `-af` filter chain before writing Opus. The default chain in `/etc/audiorec/config.toml`:
+
+```toml
+[upload]
+audio_filters = "highpass=f=80,lowpass=f=8000,afftdn=nr=12"
+```
+
+- `highpass=f=80` cuts everything below 80 Hz — kills mains hum (50/60 Hz), HVAC rumble, and handling noise.
+- `lowpass=f=8000` cuts everything above 8 kHz — kills the ultrasonic switching whine that bleeds out of cheap USB chargers. Human voice is ~85 Hz to ~8 kHz, so you lose nothing meaningful.
+- `afftdn=nr=12` applies a 12 dB FFT-domain noise reduction — takes a baseline of the background hiss and subtracts it.
+
+### Presets you can drop in
+
+Edit `/etc/audiorec/config.toml`, set `audio_filters = "..."`, then `sudo systemctl restart audiorec-uploader`. The change applies to *new* recordings; old ones keep the filter they were encoded with.
+
+**Minimal / purist** (your mic is already clean, you just want a high-pass):
+```toml
+audio_filters = "highpass=f=60"
+```
+
+**Default — good all-rounder for Pi Zero + USB mic:**
+```toml
+audio_filters = "highpass=f=80,lowpass=f=8000,afftdn=nr=12"
+```
+
+**Aggressive — Pi is in a noisy room / right next to a laptop fan:**
+```toml
+audio_filters = "highpass=f=100,lowpass=f=7000,afftdn=nr=20,anlmdn=s=7:p=0.002"
+```
+
+`afftdn=nr=20` doubles the noise reduction; `anlmdn` is a second-pass adaptive denoiser that's slower but very good at constant-character noise.
+
+**Voice podcast loudness (broadcast-ready):**
+```toml
+audio_filters = "highpass=f=80,lowpass=f=10000,afftdn=nr=15,dynaudnorm=f=150:g=15,loudnorm=I=-16:TP=-1.5"
+```
+
+`dynaudnorm` evens out quiet/loud phrases; `loudnorm` normalizes to −16 LUFS (the podcast standard).
+
+**Disable filtering entirely** (useful to A/B against the hardware fix):
+```toml
+audio_filters = ""
+```
+
+### Sample rate and bit depth
+
+The default is 16 kHz / 16-bit mono — fine for speech and tiny on disk. If your mic sounds fuzzy even with filters, try the mic's native rate — most USB mics natively capture at 48 kHz and the Pi's ALSA layer has to resample 48k→16k, which can introduce artifacts on some devices:
+
+```bash
+# Find your mic's native rates.
+arecord -D hw:1,0 --dump-hw-params 2>&1 | grep -E '^(RATE|FORMAT|CHANNELS)'
+```
+
+Then edit `/etc/audiorec/config.toml`:
+
+```toml
+[audio]
+device = "hw:1,0"
+sample_rate = 48000    # or 44100
+channels = 1
+format = "S16_LE"
+```
+
+ffmpeg will downsample cleanly when it encodes to Opus, so file size barely changes.
+
+### A/B testing a change
+
+Nothing beats listening. Record 10 seconds before and after each change and compare:
+
+```bash
+# Trigger a recording from the web UI or button, wait a beat, stop.
+ls -lt /var/lib/audiorec/recordings/*.wav | head -2
+
+# Play the latest WAV directly (raw, pre-filter):
+aplay /var/lib/audiorec/recordings/20260418T123045Z.wav
+
+# Play the uploaded Opus (post-filter) — either via the web UI's Cloud link,
+# or locally if it hasn't been pruned yet. Temporarily re-encode on your Pi:
+ffmpeg -i /var/lib/audiorec/recordings/20260418T123045Z.wav \
+       -af "highpass=f=80,lowpass=f=8000,afftdn=nr=12" \
+       -c:a libopus -b:a 32k /tmp/test.opus
+ffplay /tmp/test.opus    # or copy to your laptop to play
+```
+
+---
+
 ## Useful commands
 
 ```bash

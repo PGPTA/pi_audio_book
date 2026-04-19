@@ -129,9 +129,13 @@ long_press_s = 3.0
 [upload]
 poll_interval_s = 5
 local_retention_days = 7
-opus_bitrate = "24k"
+opus_bitrate = "32k"
 multipart_part_size_mb = 5
 max_retries = 10
+# ffmpeg audio filter chain applied before Opus encoding. Kills mains hum,
+# ultrasonic switching noise from the Pi, and constant hiss. Set to ""
+# to disable entirely, or tune - see README "Improving audio quality".
+audio_filters = "highpass=f=80,lowpass=f=8000,afftdn=nr=12"
 
 [cloud]
 provider = ""

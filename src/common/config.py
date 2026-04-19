@@ -67,9 +67,13 @@ class GpioConfig:
 class UploadConfig:
     poll_interval_s: int = 5
     local_retention_days: int = 7
-    opus_bitrate: str = "24k"
+    opus_bitrate: str = "32k"
     multipart_part_size_mb: int = 5
     max_retries: int = 10
+    # ffmpeg audio filter chain applied before encoding. Empty string = off.
+    # Defaults clean up the typical Pi Zero 2 W + USB mic interference:
+    # mains hum, ultrasonic switching whine, and constant hiss.
+    audio_filters: str = "highpass=f=80,lowpass=f=8000,afftdn=nr=12"
 
 
 @dataclass
@@ -201,6 +205,7 @@ def _serialize(cfg: Config) -> dict:
             "opus_bitrate": cfg.upload.opus_bitrate,
             "multipart_part_size_mb": cfg.upload.multipart_part_size_mb,
             "max_retries": cfg.upload.max_retries,
+            "audio_filters": cfg.upload.audio_filters,
         },
         "cloud": {
             "provider": cfg.cloud.provider,

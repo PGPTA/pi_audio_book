@@ -77,7 +77,12 @@ def _process_one(
         with tempfile.TemporaryDirectory(prefix="audiorec-enc-") as tmp:
             opus_path = Path(tmp) / opus_name
             log.info("Encoding %s -> %s", src_wav.name, opus_path.name)
-            wav_to_opus(src_wav, opus_path, cfg.upload.opus_bitrate)
+            wav_to_opus(
+                src_wav,
+                opus_path,
+                bitrate=cfg.upload.opus_bitrate,
+                filters=cfg.upload.audio_filters,
+            )
             cloud_key = wasabi.upload(opus_path, opus_name)
     except EncodeError as e:
         log.exception("Encode failed for %s", rec.id)

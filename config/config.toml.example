@@ -32,9 +32,14 @@ long_press_s = 3.0
 [upload]
 poll_interval_s = 5
 local_retention_days = 7
-opus_bitrate = "24k"
+# Voice-quality Opus bitrate. 24k = intelligible, 32k = clean voice,
+# 48k = near-CD for voice, 64k+ = serious music.
+opus_bitrate = "32k"
 multipart_part_size_mb = 5
 max_retries = 10
+# ffmpeg -af filter chain applied before Opus encoding. See README
+# "Improving audio quality" for stronger / weaker presets. "" = no filtering.
+audio_filters = "highpass=f=80,lowpass=f=8000,afftdn=nr=12"
 
 [cloud]
 # S3-compatible storage. Pick whichever you like; all use the same 6 fields.
