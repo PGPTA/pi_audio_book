@@ -8,7 +8,11 @@ Type=simple
 User=audiorec
 Group=audiorec
 SupplementaryGroups=audio gpio
-WorkingDirectory=/opt/audiorec/src
+# lgpio creates notification FIFOs (".lgd-nfy*") in the process's CWD on
+# import, so we need a dir the 'audiorec' user can write to. /opt/audiorec/src
+# is owned by root and locked down by ProtectSystem=strict; /var/lib/audiorec
+# is already in ReadWritePaths below and is owned by the service user.
+WorkingDirectory=/var/lib/audiorec
 Environment=PYTHONPATH=/opt/audiorec/src
 Environment=PYTHONUNBUFFERED=1
 Environment=AUDIOREC_CONFIG=/etc/audiorec/config.toml
