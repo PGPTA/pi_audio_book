@@ -1,4 +1,8 @@
 gpiozero>=2.0
+# lgpio is gpiozero's preferred backend on Raspberry Pi OS Bookworm+.
+# Without it, gpiozero falls back to sysfs GPIO (/sys/class/gpio), which
+# is disabled on Bookworm's kernel and fails with OSError: Invalid argument.
+lgpio>=0.2.2
 fastapi>=0.110
 uvicorn[standard]>=0.27
 jinja2>=3.1
