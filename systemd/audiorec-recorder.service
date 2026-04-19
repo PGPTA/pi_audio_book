@@ -12,6 +12,11 @@ WorkingDirectory=/opt/audiorec/src
 Environment=PYTHONPATH=/opt/audiorec/src
 Environment=PYTHONUNBUFFERED=1
 Environment=AUDIOREC_CONFIG=/etc/audiorec/config.toml
+# Pin gpiozero to lgpio -- the only backend that works on Pi OS
+# Bookworm. Without this, gpiozero silently falls back to the legacy
+# sysfs NativeFactory (which is disabled on Bookworm) if the lgpio
+# import fails for any reason, and crashes at first Button() call.
+Environment=GPIOZERO_PIN_FACTORY=lgpio
 ExecStart=/opt/audiorec/venv/bin/python -m recorder.main
 
 # Give the recorder real-time-ish priority so it never drops samples while
