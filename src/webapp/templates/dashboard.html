@@ -2,6 +2,14 @@
 {% block title %}Dashboard - Audiorec{% endblock %}
 {% block content %}
 <section class="dashboard">
+  {% if not audio_configured or not cloud_configured %}
+  <div class="setup-banner">
+    {% if not audio_configured %}Microphone not set. {% endif %}
+    {% if not cloud_configured %}Cloud storage not set. {% endif %}
+    <a href="/setup">Open setup</a>
+  </div>
+  {% endif %}
+
   <div class="status-card {% if current %}active{% endif %}" id="statusCard">
     <div class="dot {% if current %}pulse{% endif %}" id="statusDot"></div>
     <div>

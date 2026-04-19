@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Removes audiorec services and code. Keeps /var/lib/audiorec (your recordings)
-# and /etc/audiorec (your config) unless --purge is passed.
+# Removes audiorec services and code.
+#
+#   sudo bash scripts/uninstall.sh             # keeps config + data
+#   sudo bash scripts/uninstall.sh --purge     # wipe config + data + user
 
 set -euo pipefail
 
@@ -21,17 +23,18 @@ for svc in audiorec-recorder audiorec-uploader audiorec-webapp; do
 done
 systemctl daemon-reload
 
-echo ">>> removing /opt/audiorec"
+echo ">>> removing /opt/audiorec and helper/sudoers"
 rm -rf /opt/audiorec
-
+rm -f /etc/sudoers.d/audiorec
 rm -f /etc/avahi/services/audiorec.service
 
 if [[ $PURGE -eq 1 ]]; then
-    echo ">>> purging config and data"
+    echo ">>> purging config and data (--purge)"
     rm -rf /etc/audiorec /var/lib/audiorec
     userdel audiorec 2>/dev/null || true
 else
-    echo ">>> keeping /etc/audiorec and /var/lib/audiorec (pass --purge to remove)"
+    echo ">>> keeping /etc/audiorec and /var/lib/audiorec"
+    echo "    (re-run install to reuse your existing config without retyping anything)"
 fi
 
 echo "Done."

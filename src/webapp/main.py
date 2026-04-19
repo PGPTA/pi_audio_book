@@ -2,8 +2,12 @@
 
 Password-protected dashboard you can load on your phone over the local WiFi.
 Shows live status, lets you browse recordings, stream local WAVs, fetch the
-uploaded Opus from Wasabi via a short-lived presigned URL, or delete a
-recording.
+uploaded Opus from cloud storage via a short-lived presigned URL, delete a
+recording, or re-run the setup wizard.
+
+When the config is incomplete (fresh install) the webapp still starts and
+serves the /setup wizard; once setup is finished the normal dashboard
+becomes available.
 """
 from __future__ import annotations
 
@@ -22,9 +26,17 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from common import db
-from common.config import Config, load_config
+from common.config import (
+    Config,
+    is_admin_set,
+    is_audio_configured,
+    is_cloud_configured,
+    is_fully_configured,
+    load_config,
+)
 
 from .auth import COOKIE_NAME, SessionSigner, verify_password
+from .setup import ConfigHolder, SignerHolder, build_setup_router
 
 
 log = logging.getLogger("audiorec.webapp")
@@ -36,7 +48,11 @@ STATIC_DIR = BASE_DIR / "static"
 
 def create_app(cfg: Optional[Config] = None) -> FastAPI:
     cfg = cfg or load_config()
-    signer = SessionSigner(cfg.web.session_secret, cfg.web.session_lifetime_s)
+    cfg_holder = ConfigHolder(cfg)
+    signer_holder = SignerHolder(
+        SessionSigner(cfg.web.session_secret or "bootstrap", cfg.web.session_lifetime_s)
+    )
+
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     templates.env.filters["filesizeformat"] = _format_bytes
     templates.env.filters["duration"] = _format_duration
@@ -44,9 +60,12 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
     app = FastAPI(title="Audiorec", docs_url=None, redoc_url=None)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+    # Mount the setup wizard early so its paths are never shadowed by guards.
+    app.include_router(build_setup_router(templates, cfg_holder, signer_holder))
+
     # --- per-request helpers ---
     def get_conn():
-        conn = db.connect(cfg.paths.db_path)
+        conn = db.connect(cfg_holder.cfg.paths.db_path)
         try:
             yield conn
         finally:
@@ -54,7 +73,7 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
 
     def require_user(request: Request) -> str:
         cookie = request.cookies.get(COOKIE_NAME)
-        user = signer.verify_cookie(cookie)
+        user = signer_holder.signer.verify_cookie(cookie)
         if user is None:
             raise HTTPException(
                 status_code=status.HTTP_303_SEE_OTHER,
@@ -63,9 +82,31 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
             )
         return user
 
-    # --- routes ---
+    # --- setup-gate middleware ---
+    # Anything outside this allow-list is blocked until setup is complete.
+    SETUP_ALLOW_PREFIXES = ("/setup", "/api/setup", "/static", "/login", "/logout")
+
+    @app.middleware("http")
+    async def _setup_gate(request: Request, call_next):
+        path = request.url.path
+        if is_fully_configured(cfg_holder.cfg):
+            return await call_next(request)
+        if any(path == p or path.startswith(p + "/") or path == p for p in SETUP_ALLOW_PREFIXES):
+            return await call_next(request)
+        if path.startswith("/api/"):
+            return Response(
+                content="setup not complete",
+                status_code=503,
+                media_type="text/plain",
+            )
+        return RedirectResponse(url="/setup", status_code=303)
+
+    # --- auth routes ---
     @app.get("/login", response_class=HTMLResponse)
     def login_form(request: Request):
+        if not is_admin_set(cfg_holder.cfg):
+            # No admin yet -> first-run setup takes priority.
+            return RedirectResponse(url="/setup", status_code=303)
         return templates.TemplateResponse(request, "login.html", {"error": None})
 
     @app.post("/login")
@@ -74,6 +115,9 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         username: str = Form(...),
         password: str = Form(...),
     ):
+        cfg = cfg_holder.cfg
+        if not is_admin_set(cfg):
+            return RedirectResponse(url="/setup", status_code=303)
         ok = username == cfg.web.username and verify_password(password, cfg.web.password_hash)
         if not ok:
             return templates.TemplateResponse(
@@ -82,10 +126,13 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
                 {"error": "Invalid username or password."},
                 status_code=status.HTTP_401_UNAUTHORIZED,
             )
-        resp = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+        next_url = request.query_params.get("next") or "/"
+        if not next_url.startswith("/"):
+            next_url = "/"
+        resp = RedirectResponse(url=next_url, status_code=status.HTTP_303_SEE_OTHER)
         resp.set_cookie(
             COOKIE_NAME,
-            signer.make_cookie(username),
+            signer_holder.signer.make_cookie(username),
             max_age=cfg.web.session_lifetime_s,
             httponly=True,
             samesite="lax",
@@ -99,8 +146,10 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         resp.delete_cookie(COOKIE_NAME, path="/")
         return resp
 
+    # --- main routes ---
     @app.get("/", response_class=HTMLResponse)
     def dashboard(request: Request, conn=Depends(get_conn), _user: str = Depends(require_user)):
+        cfg = cfg_holder.cfg
         current = db.current_recording(conn)
         last_up = db.last_uploaded(conn)
         pending = db.count_by_status(conn, db.STATUS_PENDING_UPLOAD) + db.count_by_status(
@@ -121,6 +170,8 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
                 "failed_count": failed,
                 "total": total,
                 "disk": disk,
+                "audio_configured": is_audio_configured(cfg),
+                "cloud_configured": is_cloud_configured(cfg),
             },
         )
 
@@ -158,7 +209,7 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
             rec = db.get_recording(conn, rec_id)
         except KeyError:
             raise HTTPException(status_code=404, detail="recording not found")
-        path = cfg.paths.recordings_dir / rec.filename
+        path = cfg_holder.cfg.paths.recordings_dir / rec.filename
         if not path.exists():
             raise HTTPException(status_code=410, detail="local WAV pruned; use /cloud")
         return FileResponse(path, media_type="audio/wav", filename=rec.filename)
@@ -169,17 +220,18 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         conn=Depends(get_conn),
         _user: str = Depends(require_user),
     ):
+        cfg = cfg_holder.cfg
         try:
             rec = db.get_recording(conn, rec_id)
         except KeyError:
             raise HTTPException(status_code=404, detail="recording not found")
         if not rec.cloud_key:
             raise HTTPException(status_code=409, detail="not uploaded yet")
+        if not is_cloud_configured(cfg):
+            raise HTTPException(status_code=503, detail="cloud not configured")
 
-        # Lazy import so the webapp doesn't pull boto3 at startup if the user
-        # hasn't configured Wasabi yet.
         from uploader.wasabi import WasabiClient
-        client = WasabiClient(cfg.wasabi, part_size_mb=cfg.upload.multipart_part_size_mb)
+        client = WasabiClient(cfg.cloud, part_size_mb=cfg.upload.multipart_part_size_mb)
         url = client.presign_get(rec.cloud_key, expires_s=300)
         return RedirectResponse(url=url, status_code=status.HTTP_302_FOUND)
 
@@ -189,6 +241,7 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         conn=Depends(get_conn),
         _user: str = Depends(require_user),
     ):
+        cfg = cfg_holder.cfg
         try:
             rec = db.get_recording(conn, rec_id)
         except KeyError:
@@ -196,16 +249,14 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         if rec.status in (db.STATUS_RECORDING, db.STATUS_UPLOADING):
             raise HTTPException(status_code=409, detail="cannot delete while in-flight")
 
-        # Delete cloud copy first (best-effort).
-        if rec.cloud_key:
+        if rec.cloud_key and is_cloud_configured(cfg):
             try:
                 from uploader.wasabi import WasabiClient
-                client = WasabiClient(cfg.wasabi, part_size_mb=cfg.upload.multipart_part_size_mb)
+                client = WasabiClient(cfg.cloud, part_size_mb=cfg.upload.multipart_part_size_mb)
                 client.delete(rec.cloud_key)
             except Exception:
                 log.exception("Failed to delete cloud copy for %s", rec.id)
 
-        # Then the local WAV.
         path = cfg.paths.recordings_dir / rec.filename
         try:
             if path.exists():
@@ -218,7 +269,7 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
 
     @app.post("/api/toggle")
     def api_toggle(conn=Depends(get_conn), _user: str = Depends(require_user)):
-        """Signal the recorder to start/stop - same effect as the physical button."""
+        cfg = cfg_holder.cfg
         pid = _read_recorder_pid(cfg.paths.data_dir / "recorder.pid")
         if pid is None:
             raise HTTPException(status_code=503, detail="recorder not running")
@@ -229,7 +280,6 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         except PermissionError:
             raise HTTPException(status_code=503, detail="permission denied signalling recorder")
 
-        # Give the recorder a moment to flip state, then report the new status.
         time.sleep(0.4)
         current = db.current_recording(conn)
         return {
@@ -239,6 +289,7 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
 
     @app.get("/api/status")
     def api_status(conn=Depends(get_conn), _user: str = Depends(require_user)):
+        cfg = cfg_holder.cfg
         current = db.current_recording(conn)
         last_up = db.last_uploaded(conn)
         return {
@@ -252,7 +303,6 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
             "disk_free_bytes": _disk_usage(cfg.paths.data_dir)["free"],
         }
 
-    # Map auth redirect exceptions to 303s.
     @app.exception_handler(HTTPException)
     def _auth_redirects(request: Request, exc: HTTPException):
         if exc.status_code == status.HTTP_303_SEE_OTHER and "Location" in (exc.headers or {}):
@@ -267,12 +317,10 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
 
 
 def _read_recorder_pid(pidfile: Path) -> Optional[int]:
-    """Best-effort PID read. Returns None if pidfile missing or stale."""
     try:
         pid = int(pidfile.read_text().strip())
     except (FileNotFoundError, ValueError):
         return None
-    # Verify the process actually exists (pidfile could be stale after a crash).
     try:
         os.kill(pid, 0)
     except (ProcessLookupError, PermissionError):

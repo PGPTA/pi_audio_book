@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Setup - Audiorec</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <span class="brand">Audiorec setup</span>
+    <nav>
+      {% if state.setup_complete %}<a href="/">Dashboard</a>{% endif %}
+    </nav>
+  </header>
+
+  <main>
+    <h1>Set up your Pi</h1>
+    <p class="sub">This wizard writes <code>/etc/audiorec/config.toml</code>. You can come back any time to change things.</p>
+
+    <ol class="wizard" id="wizard">
+      <!-- Step 1: admin ------------------------------------------------- -->
+      <li class="step" data-step="admin" data-done="{{ 'yes' if state.admin_set else 'no' }}">
+        <header>
+          <span class="badge-num">1</span>
+          <h2>Admin account</h2>
+          <span class="status">{% if state.admin_set %}set ({{ state.admin_username }}){% else %}required{% endif %}</span>
+        </header>
+        <div class="body">
+          {% if state.admin_set %}
+            <p class="sub">Logged-in user: <strong>{{ state.admin_username }}</strong>. Expand to change.</p>
+          {% endif %}
+          <form class="step-form" data-action="/api/setup/admin">
+            <label>Username<input name="username" value="{{ state.admin_username or 'admin' }}" autocomplete="username" required></label>
+            <label>Password (min 6 chars)<input name="password" type="password" autocomplete="new-password" required minlength="6"></label>
+            <button type="submit">Save</button>
+            <span class="form-msg"></span>
+          </form>
+        </div>
+      </li>
+
+      <!-- Step 2: microphone -------------------------------------------- -->
+      <li class="step" data-step="mic" data-done="{{ 'yes' if state.mic_set else 'no' }}">
+        <header>
+          <span class="badge-num">2</span>
+          <h2>Microphone</h2>
+          <span class="status">{% if state.mic_set %}{{ state.mic_device }}{% else %}pick one{% endif %}</span>
+        </header>
+        <div class="body">
+          <div class="mic-list" id="mic-list"><p class="sub">Scanning for USB mics...</p></div>
+          <div class="mic-actions">
+            <button type="button" id="mic-rescan">Rescan</button>
+            <button type="button" id="mic-test" disabled>Test 2s capture</button>
+            <button type="button" id="mic-save" disabled>Use this mic</button>
+            <audio id="mic-playback" controls style="display:none;"></audio>
+            <span class="form-msg"></span>
+          </div>
+        </div>
+      </li>
+
+      <!-- Step 3: cloud -------------------------------------------------- -->
+      <li class="step" data-step="cloud" data-done="{{ 'yes' if state.cloud_set else 'no' }}">
+        <header>
+          <span class="badge-num">3</span>
+          <h2>Cloud storage</h2>
+          <span class="status">{% if state.cloud_set %}{{ state.cloud_provider or 'configured' }} / {{ state.cloud_bucket }}{% else %}pick a provider{% endif %}</span>
+        </header>
+        <div class="body">
+          <form class="step-form cloud-form" data-action="/api/setup/cloud">
+            <label>Provider
+              <select name="provider" id="cloud-provider">
+                {% for p in providers %}
+                <option value="{{ p.id }}" data-region="{{ p.region_example }}" data-endpoint="{{ p.endpoint_template }}" data-help="{{ p.help }}"{% if state.cloud_provider == p.id %} selected{% endif %}>{{ p.label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <p class="sub" id="cloud-help"></p>
+            <label>Region<input name="region" id="cloud-region" value="{{ cfg.cloud.region }}"></label>
+            <label>Endpoint URL<input name="endpoint_url" id="cloud-endpoint" value="{{ cfg.cloud.endpoint_url }}" placeholder="https://..."></label>
+            <label>Bucket name<input name="bucket" value="{{ cfg.cloud.bucket }}" required></label>
+            <label>Access key ID<input name="access_key" value="{{ cfg.cloud.access_key }}" required autocomplete="off"></label>
+            <label>Secret access key<input name="secret_key" type="password" autocomplete="new-password" placeholder="{% if state.cloud_set %}(leave blank to keep existing){% endif %}"></label>
+            <label>Key prefix (folder)<input name="key_prefix" value="{{ cfg.cloud.key_prefix or 'recordings/' }}"></label>
+            <div class="row">
+              <button type="button" class="secondary" id="cloud-test">Test connection</button>
+              <button type="submit">Save</button>
+            </div>
+            <span class="form-msg"></span>
+          </form>
+        </div>
+      </li>
+
+      <!-- Step 4: hostname (optional) ----------------------------------- -->
+      <li class="step" data-step="hostname" data-optional="yes">
+        <header>
+          <span class="badge-num">4</span>
+          <h2>Hostname <small>(optional)</small></h2>
+          <span class="status">{{ state.hostname }}</span>
+        </header>
+        <div class="body">
+          <p class="sub">Default <code>audiorec.local</code> usually works. Change it if you run more than one Pi on your network.</p>
+          <form class="step-form" data-action="/api/setup/hostname">
+            <label>Short name (letters, digits, hyphens)<input name="hostname" value="{{ state.hostname.replace('.local','') }}" pattern="[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?" required></label>
+            <button type="submit">Save</button>
+            <span class="form-msg"></span>
+          </form>
+        </div>
+      </li>
+
+      <!-- Step 5: finish ------------------------------------------------- -->
+      <li class="step" data-step="finish">
+        <header>
+          <span class="badge-num">5</span>
+          <h2>Finish</h2>
+          <span class="status" id="finish-status">{% if state.setup_complete %}setup complete{% else %}not yet{% endif %}</span>
+        </header>
+        <div class="body">
+          <p class="sub">Complete the steps above (admin, mic, cloud), then hit finish. We'll restart the recorder and uploader with your new config.</p>
+          <button type="button" id="finish-btn">Finish setup</button>
+          <span class="form-msg" id="finish-msg"></span>
+        </div>
+      </li>
+    </ol>
+  </main>
+
+  <script>
+  (function() {
+    const $ = sel => document.querySelector(sel);
+    const $$ = sel => Array.from(document.querySelectorAll(sel));
+
+    let state = {{ state | tojson }};
+    let selectedMic = null;
+
+    function flash(el, msg, ok) {
+      el.textContent = msg || "";
+      el.className = "form-msg " + (ok ? "ok" : (msg ? "err" : ""));
+    }
+
+    function markDone(stepEl, done) {
+      stepEl.setAttribute("data-done", done ? "yes" : "no");
+    }
+
+    async function postJSON(url, body) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body || {}),
+        credentials: "same-origin",
+      });
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch (e) {}
+      if (!res.ok) {
+        throw new Error((data && data.detail) || text || ("HTTP " + res.status));
+      }
+      return data;
+    }
+
+    // --- step 1: admin -----------------------------------------------
+    $$('.step[data-step="admin"] form').forEach(form => {
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const msg = form.querySelector(".form-msg");
+        flash(msg, "Saving...", true);
+        try {
+          const fd = new FormData(form);
+          const data = await postJSON(form.dataset.action, {
+            username: fd.get("username"),
+            password: fd.get("password"),
+          });
+          state = data.state;
+          markDone(form.closest(".step"), true);
+          flash(msg, "Saved. You're logged in.", true);
+          form.querySelector('input[name="password"]').value = "";
+        } catch (err) {
+          flash(msg, err.message, false);
+        }
+      });
+    });
+
+    // --- step 2: mic -------------------------------------------------
+    async function loadMics() {
+      const list = $("#mic-list");
+      list.innerHTML = '<p class="sub">Scanning for USB mics...</p>';
+      try {
+        const res = await fetch("/api/setup/mics", {credentials: "same-origin"});
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        if (!data.mics.length) {
+          list.innerHTML = '<p class="err">No USB mic detected. Plug one in and hit Rescan.</p>';
+          $("#mic-test").disabled = true;
+          $("#mic-save").disabled = true;
+          return;
+        }
+        list.innerHTML = "";
+        data.mics.forEach((mic, i) => {
+          const id = "mic-" + i;
+          const wrap = document.createElement("label");
+          wrap.className = "mic-item";
+          wrap.innerHTML = `<input type="radio" name="mic" id="${id}" value="${mic.device}"${(state.mic_device === mic.device || (!state.mic_device && i === 0)) ? " checked" : ""}><span><strong>${mic.device}</strong> &mdash; ${mic.label}</span>`;
+          list.appendChild(wrap);
+        });
+        onMicChange();
+        list.addEventListener("change", onMicChange);
+      } catch (err) {
+        list.innerHTML = '<p class="err">Failed to list mics: ' + err.message + '</p>';
+      }
+    }
+    function onMicChange() {
+      const picked = document.querySelector('input[name="mic"]:checked');
+      selectedMic = picked ? picked.value : null;
+      $("#mic-test").disabled = !selectedMic;
+      $("#mic-save").disabled = !selectedMic;
+    }
+    $("#mic-rescan").addEventListener("click", loadMics);
+
+    $("#mic-test").addEventListener("click", async () => {
+      if (!selectedMic) return;
+      const step = document.querySelector('.step[data-step="mic"]');
+      const msg = step.querySelector(".form-msg");
+      const player = $("#mic-playback");
+      flash(msg, "Recording 2 seconds...", true);
+      $("#mic-test").disabled = true;
+      try {
+        const res = await fetch("/api/setup/test-mic", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({device: selectedMic, duration_s: 2}),
+          credentials: "same-origin",
+        });
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(t || ("HTTP " + res.status));
+        }
+        const blob = await res.blob();
+        player.src = URL.createObjectURL(blob);
+        player.style.display = "inline-block";
+        flash(msg, "Play to hear your mic.", true);
+      } catch (err) {
+        flash(msg, "Test failed: " + err.message, false);
+      } finally {
+        $("#mic-test").disabled = false;
+      }
+    });
+
+    $("#mic-save").addEventListener("click", async () => {
+      if (!selectedMic) return;
+      const step = document.querySelector('.step[data-step="mic"]');
+      const msg = step.querySelector(".form-msg");
+      flash(msg, "Saving...", true);
+      try {
+        const data = await postJSON("/api/setup/mic", {device: selectedMic});
+        state = data.state;
+        markDone(step, true);
+        step.querySelector(".status").textContent = selectedMic;
+        flash(msg, "Saved. Recorder restarted.", true);
+      } catch (err) {
+        flash(msg, err.message, false);
+      }
+    });
+
+    // --- step 3: cloud -----------------------------------------------
+    function applyProvider() {
+      const sel = $("#cloud-provider");
+      const opt = sel.options[sel.selectedIndex];
+      if (!opt) return;
+      $("#cloud-help").textContent = opt.dataset.help || "";
+      // Only overwrite empty fields so we don't clobber what the user typed.
+      const regionEl = $("#cloud-region");
+      const endpointEl = $("#cloud-endpoint");
+      if (!regionEl.value.trim() && opt.dataset.region) regionEl.value = opt.dataset.region;
+      if (!endpointEl.value.trim() && opt.dataset.endpoint && !opt.dataset.endpoint.includes("<")) {
+        endpointEl.value = opt.dataset.endpoint.replace("{region}", regionEl.value || opt.dataset.region);
+      }
+    }
+    $("#cloud-provider").addEventListener("change", applyProvider);
+    applyProvider();
+
+    function cloudPayload() {
+      const form = document.querySelector('.cloud-form');
+      const fd = new FormData(form);
+      const payload = Object.fromEntries(fd.entries());
+      // Don't send an empty secret_key if the user left it blank on re-edit.
+      if (!payload.secret_key) delete payload.secret_key;
+      return payload;
+    }
+
+    $("#cloud-test").addEventListener("click", async () => {
+      const step = document.querySelector('.step[data-step="cloud"]');
+      const msg = step.querySelector(".form-msg");
+      flash(msg, "Connecting to bucket...", true);
+      try {
+        const payload = cloudPayload();
+        if (!payload.secret_key) {
+          flash(msg, "Secret access key required to test.", false);
+          return;
+        }
+        await postJSON("/api/setup/test-cloud", payload);
+        flash(msg, "Bucket reachable!", true);
+      } catch (err) {
+        flash(msg, "Test failed: " + err.message, false);
+      }
+    });
+
+    document.querySelector('.cloud-form').addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const step = document.querySelector('.step[data-step="cloud"]');
+      const msg = step.querySelector(".form-msg");
+      flash(msg, "Saving...", true);
+      try {
+        const data = await postJSON("/api/setup/cloud", cloudPayload());
+        state = data.state;
+        markDone(step, true);
+        flash(msg, "Saved. Uploader restarted.", true);
+      } catch (err) {
+        flash(msg, err.message, false);
+      }
+    });
+
+    // --- step 4: hostname --------------------------------------------
+    document.querySelector('.step[data-step="hostname"] form').addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const step = form.closest(".step");
+      const msg = step.querySelector(".form-msg");
+      flash(msg, "Saving...", true);
+      try {
+        const fd = new FormData(form);
+        const data = await postJSON(form.dataset.action, {hostname: fd.get("hostname")});
+        state = data.state;
+        step.querySelector(".status").textContent = data.hostname;
+        flash(msg, "Saved. Use http://" + data.hostname + "/ from now on.", true);
+      } catch (err) {
+        flash(msg, err.message, false);
+      }
+    });
+
+    // --- step 5: finish ----------------------------------------------
+    $("#finish-btn").addEventListener("click", async () => {
+      const msg = $("#finish-msg");
+      flash(msg, "Finishing...", true);
+      try {
+        const data = await postJSON("/api/setup/finish", {});
+        flash(msg, "All set. Redirecting...", true);
+        setTimeout(() => { window.location.href = data.redirect || "/"; }, 600);
+      } catch (err) {
+        flash(msg, err.message, false);
+      }
+    });
+
+    // On load, populate mic list if admin is already set.
+    if (state.admin_set) {
+      loadMics();
+    } else {
+      $("#mic-list").innerHTML = '<p class="sub">Create your admin account first.</p>';
+    }
+  })();
+  </script>
+</body>
+</html>

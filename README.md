@@ -2,13 +2,55 @@
 
 A tiny appliance for a **Raspberry Pi Zero 2 WH** that:
 
-- Records from a **USB microphone** when you press a **button**, and stops when you press it again.
+- Records from a **USB microphone** when you press a **button** and stops when you press it again.
 - Saves recordings to the SD card as WAV.
 - In the background, encodes each recording to **Opus** and uploads it to any **S3-compatible** object store (Backblaze B2, Cloudflare R2, Wasabi, DigitalOcean Spaces, AWS S3, MinIO, ...).
-- Serves a **password-protected web UI** you can open on your phone over the local WiFi to see status and play back recordings.
+- Serves a **password-protected web UI** you can open on your phone over the local WiFi to see status, start/stop recording without the button, browse and play back recordings.
 - Falls back to an **open WiFi access point + captive portal** for first-boot WiFi setup (via [comitup](https://github.com/davesteele/comitup)).
 
-All three moving parts — recorder, uploader, web UI — are independent systemd services talking through a shared SQLite file. A crash or slow upload never blocks the recorder.
+All three moving parts — recorder, uploader, web UI — are independent `systemd` services talking through a shared SQLite file, so a slow upload or a webapp crash never stops you recording.
+
+---
+
+## Quickstart (one command, everything else in the browser)
+
+### 1. Flash Raspberry Pi OS
+
+Use Raspberry Pi Imager. **Raspberry Pi OS Lite (64-bit, Bookworm)** is ideal. In the imager's advanced options pre-configure your WiFi + SSH so you can skip the AP-mode step on first install.
+
+### 2. Clone + install on the Pi
+
+```bash
+ssh pi@raspberrypi.local
+git clone https://github.com/PGPTA/pi_audio_book.git ~/pi_audio_book
+cd ~/pi_audio_book
+sudo bash scripts/setup.sh
+```
+
+That's it. No questions asked — the script installs apt packages, creates the service user, copies the code, builds a venv, writes a skeleton config, and starts all three services (recorder / uploader / webapp), each of which is enabled to auto-start on every boot.
+
+When it finishes, open on your phone (same WiFi):
+
+```
+http://audiorec.local
+# or http://<pi-ip> if .local doesn't resolve
+```
+
+You'll land on the **setup wizard**.
+
+### 3. Finish setup in the browser
+
+The wizard walks you through five small steps:
+
+1. **Admin account** — pick a username + password; you're logged in automatically.
+2. **Microphone** — the Pi scans for USB mics and lists them; tap one, hit **Test 2s capture** to confirm it's picking you up, then **Use this mic**.
+3. **Cloud storage** — pick a provider (B2 / R2 / Wasabi / DO / custom S3), paste your keys + bucket, hit **Test connection** to verify, then **Save**.
+4. **Hostname** *(optional)* — change `audiorec.local` to something else if you run more than one Pi.
+5. **Finish** — flips the "setup complete" flag, restarts the recorder + uploader with the new config, and drops you on the dashboard.
+
+### 4. That's it
+
+Press the physical button or the big button on the dashboard to start/stop recording. Your next power cycle will bring everything back automatically — no re-entering credentials, no re-running the wizard.
 
 ---
 
@@ -26,269 +68,175 @@ All three moving parts — recorder, uploader, web UI — are independent system
 ### Wiring
 
 ```
-Pi Zero 2 W pinout (bottom section shown):
-
-          GPIO17 (pin 11)  ----+
-                                \
-                                 |---[ push button (momentary) ]
-                                /
-          GND    (pin 9)   ----+
-
+          GPIO17 (pin 11) ----[ push button (momentary) ]---- GND (pin 9)
 
 Optional LED:
-          GPIO18 (pin 12)  ----[330 Ω]----[ LED + ]----[ LED - ]---- GND (pin 6)
+          GPIO18 (pin 12) ----[330 Ω]----[ LED + ]----[ LED - ]---- GND (pin 6)
 ```
 
 The internal pull-up is enabled in software, so no external resistor is needed for the button. Pressing the button briefly connects GPIO17 to GND, which registers as a press.
 
 ---
 
-## Quickstart
+## First-boot WiFi (no router? no problem)
 
-### 1. Flash Raspberry Pi OS
+If the Pi can't find a WiFi network on boot, `comitup` spins up its own open access point called `audiorec-XXXX`:
 
-Use Raspberry Pi Imager. **Raspberry Pi OS Lite (64-bit, Bookworm)** is ideal. In the imager's advanced options, pre-configure your WiFi credentials and enable SSH — that lets you skip the AP-mode bootstrap for first install.
+1. On your phone, join that SSID.
+2. A captive portal pops up.
+3. Pick your real WiFi, enter the password.
+4. The Pi joins your WiFi and the AP disappears.
 
-### 2. Clone this repo on the Pi
+From that point on, open `http://audiorec.local` from the same network.
+
+---
+
+## Architecture
+
+```
+ +------------------+     +----------------+     +-----------+
+ | recorder.service |---->| /var/lib/      |<----| uploader  |
+ |  - arecord       |     |  audiorec/     |     |  - ffmpeg |
+ |  - GPIO button   |     |   recordings/  |     |  - boto3  |
+ |  - POSIX signals |     |   recordings.db|     |           |
+ +------------------+     +----------------+     +-----------+
+                                   ^
+                                   |
+                           +---------------+
+                           | webapp.service|
+                           |  - FastAPI    |
+                           |  - setup      |
+                           |  - dashboard  |
+                           +---------------+
+```
+
+- **recorder** owns an `arecord` subprocess and writes a raw WAV. SIGUSR1 from the webapp acts exactly like a physical button press. If no mic is configured it idles politely until you finish the wizard.
+- **uploader** polls SQLite for `pending_upload` rows, encodes WAV→Opus with `ffmpeg`, and streams to the bucket via `boto3` multipart upload (5 MB parts, `max_concurrency=1` to keep RAM low). Idles until cloud creds are set.
+- **webapp** serves the setup wizard, dashboard, and recording list; talks to the recorder via a pidfile + signals; mints short-lived presigned URLs for cloud playback.
+
+### How the webapp writes config without being root
+
+The webapp runs as the unprivileged `audiorec` user. It writes `/etc/audiorec/config.toml` directly (the file is owned by `audiorec`), and uses `sudo` to call a tightly-scoped helper at `/opt/audiorec/bin/audiorec-setup-helper` for the three things that genuinely need root:
+
+- `restart-recorder` / `restart-uploader` — so the new config takes effect
+- `set-hostname <name>` — updates `/etc/hostname` + `/etc/hosts` and restarts avahi
+
+That's the only sudo entry granted to `audiorec` (see `/etc/sudoers.d/audiorec`), and the helper validates every argument it receives.
+
+---
+
+## Reinstalling / upgrading / wiping
+
+### Pull an update without losing settings
 
 ```bash
-ssh pi@raspberrypi.local
-git clone <this-repo-url> ~/pi_audio_book
 cd ~/pi_audio_book
+git pull
+sudo bash scripts/setup.sh
 ```
 
-### 3. Run the installer
+The script detects an existing `/etc/audiorec/config.toml` and leaves it alone, so you keep your admin password, mic choice, cloud creds, and hostname. Services are restarted with the new code.
+
+### Start fresh but keep recordings
 
 ```bash
-sudo bash scripts/install.sh
+sudo bash scripts/uninstall.sh   # removes code, keeps /etc/audiorec and /var/lib/audiorec
+sudo bash scripts/setup.sh       # reinstalls, reuses the kept config
 ```
 
-This installs `ffmpeg`, `alsa-utils`, `avahi-daemon`, `comitup`, creates the `audiorec` service user, copies the code to `/opt/audiorec`, sets up a venv, installs systemd units, and registers the mDNS service.
-
-### 4. Find your USB mic
+### Nuke absolutely everything (credentials, recordings, service user)
 
 ```bash
-arecord -l
+sudo bash scripts/uninstall.sh --purge
 ```
-
-Look for a line like:
-
-```
-card 1: Device [USB PnP Sound Device], device 0: USB Audio [USB Audio]
-```
-
-That means your device is `hw:1,0`.
-
-### 5. Create your cloud bucket
-
-Any S3-compatible provider works. Recommended:
-
-**Backblaze B2** (free for 10 GB, friendliest setup)
-
-1. Sign up / sign in at [secure.backblaze.com](https://secure.backblaze.com/user_signin.htm).
-2. **Buckets → Create a Bucket**: pick a globally-unique name, Files in Bucket = **Private**, Default Encryption = **Enable**.
-3. Note the **Endpoint** shown on the bucket's page (e.g. `s3.us-west-004.backblazeb2.com`). The region is the piece after `s3.` (e.g. `us-west-004`).
-4. **Application Keys → Add a New Application Key** scoped to **just this bucket**, Type = **Read and Write**. Copy the `keyID` and `applicationKey` — the secret is shown only once.
-
-**Alternatives** (all work identically; just different endpoints):
-
-- **Cloudflare R2**: 10 GB free forever, zero egress. Endpoint: `https://<account-id>.r2.cloudflarestorage.com`, region: `auto`.
-- **Wasabi**: $7/TB flat. Endpoint: `https://s3.<region>.wasabisys.com`.
-- **DigitalOcean Spaces**: $5/mo for 250 GB. Endpoint: `https://<region>.digitaloceanspaces.com`.
-- **MinIO / self-hosted**: point `endpoint_url` at your server.
-
-### 6. Generate a web password and session secret
-
-```bash
-sudo -u audiorec /opt/audiorec/venv/bin/python \
-    /home/pi/pi_audio_book/scripts/hash_password.py
-openssl rand -hex 32
-```
-
-### 7. Edit the config
-
-```bash
-sudo nano /etc/audiorec/config.toml
-```
-
-Fill in:
-
-- `[audio].device` — e.g. `"hw:1,0"`
-- `[wasabi].access_key`, `secret_key`, `bucket`, `endpoint_url`, `region` (section is named `wasabi` for legacy reasons but works with any S3-compatible provider)
-- `[web].password_hash` — from step 6
-- `[web].session_secret` — from step 6
-
-### 8. Start the services
-
-```bash
-sudo systemctl start audiorec-recorder audiorec-uploader audiorec-webapp
-```
-
-Check they came up cleanly:
-
-```bash
-systemctl status audiorec-recorder audiorec-uploader audiorec-webapp
-journalctl -u audiorec-recorder -f
-```
-
-### 9. Open the web UI
-
-From a phone on the same WiFi: **http://audiorec.local** (or `http://<pi-ip>`).
-
----
-
-## First boot with no WiFi configured
-
-If you didn't preconfigure WiFi in the imager (or you move the Pi to a new network), comitup will automatically:
-
-1. Try known WiFi networks for ~60 seconds.
-2. If no connection, bring up an open WiFi network called `audiorec-XXX`.
-3. Connect your phone to that SSID. Most phones will pop up the captive portal page automatically; otherwise open a browser and go to `http://10.41.0.1`.
-4. Pick your home WiFi, enter the password, submit.
-5. The Pi reboots into client mode and joins your network.
-
-After that, open `http://audiorec.local` on your phone.
-
----
-
-## How it works
-
-```
-                        ┌──────────────────────────────┐
-  [button] ─── GPIO ───▶│                              │
-                        │   audiorec-recorder.service  │──── arecord ───▶ /var/lib/audiorec/recordings/*.wav
-  [USB mic] ──────────▶ │   (toggles on press)         │
-                        └──────────────┬───────────────┘
-                                       │ insert / update row
-                                       ▼
-                              ┌────────────────────┐
-                              │ recordings.db      │
-                              │ (SQLite, WAL mode) │
-                              └──┬─────────────┬───┘
-                                 │             │
-                    claim row    │             │ read rows
-                                 ▼             ▼
-                   ┌──────────────────────┐  ┌──────────────────────┐
-                   │ audiorec-uploader    │  │ audiorec-webapp      │
-                   │ ffmpeg WAV→Opus      │  │ FastAPI + uvicorn    │
-                   │ boto3 multipart      │  │ login / dashboard /  │
-                   │ Nice=10, idle IO     │  │ recordings / stream  │
-                   └──────────┬───────────┘  └──────────┬───────────┘
-                              │ PUT Opus                │
-                              ▼                         ▼
-                         ┌──────────┐              http://audiorec.local
-                         │  S3-like │              (phone on same WiFi)
-                         │  bucket  │              (B2 / R2 / Wasabi / ...)
-                         └──────────┘
-```
-
-Why three services instead of one process?
-
-- The recorder is the only thing that must never stall. Running it alone in a minimal process with higher CPU/IO priority (`Nice=-5`) means a long cloud upload, a web request, or a transient crash in another component can never cost you audio.
-- The uploader runs `Nice=10` + `IOSchedulingClass=idle`, so it only uses CPU/IO when nobody else wants them.
-- The web UI only does work when you load a page.
-
-### Resource usage (measured on Pi Zero 2 W, 16 kHz mono)
-
-| Process | Idle RAM | Recording | Encoding | Uploading |
-|---|---|---|---|---|
-| recorder | ~18 MB | ~20 MB | - | - |
-| uploader | ~30 MB | - | ~45 MB (one ffmpeg) | ~40 MB |
-| webapp | ~55 MB | - | - | - |
-
-Total peak well under 200 MB on a 512 MB device.
-
----
-
-## Data layout
-
-```
-/etc/audiorec/config.toml         # all configuration (mode 0640, owned by audiorec)
-/opt/audiorec/
-    src/                          # Python code (read-only for the service user)
-    venv/                         # Python virtualenv
-/var/lib/audiorec/
-    recordings.db                 # SQLite
-    recordings/                   # WAV files
-        20260418T142301Z.wav
-        ...
-```
-
-Uploaded recordings land in `s3://<bucket>/<key_prefix><timestamp>.opus`. Local WAVs are pruned `local_retention_days` after a successful upload (default 7 days).
 
 ---
 
 ## Useful commands
 
 ```bash
-# tail logs
+# tail each service's log
 journalctl -fu audiorec-recorder
 journalctl -fu audiorec-uploader
 journalctl -fu audiorec-webapp
 
-# restart everything
-sudo systemctl restart audiorec-recorder audiorec-uploader audiorec-webapp
+# restart manually (the webapp does this automatically when you save settings)
+sudo systemctl restart audiorec-recorder
+sudo systemctl restart audiorec-uploader
 
-# one-shot manual test of the mic (Ctrl-C to stop)
-arecord -D hw:1,0 -f S16_LE -r 16000 -c 1 -t wav /tmp/test.wav
-aplay /tmp/test.wav
+# peek at the config
+sudo cat /etc/audiorec/config.toml
 
-# check the upload queue
-sudo -u audiorec sqlite3 /var/lib/audiorec/recordings.db \
-    "SELECT status, COUNT(*) FROM recordings GROUP BY status;"
+# disk + queue status
+du -sh /var/lib/audiorec/recordings
+sqlite3 /var/lib/audiorec/recordings.db 'select status, count(*) from recordings group by status;'
 ```
-
----
-
-## Configuration reference
-
-All settings live in `/etc/audiorec/config.toml`. See [`config/config.toml.example`](config/config.toml.example) for the fully-commented template.
-
-Common tweaks:
-
-- **Music-quality audio**: change `[audio].sample_rate = 44100`, `channels = 2`, and `[upload].opus_bitrate = "64k"`.
-- **Different GPIO pin**: change `[gpio].button_pin` (BCM numbering).
-- **Longer offline buffer**: raise `[upload].local_retention_days` (or set `0` to keep everything forever).
-- **Different mDNS name**: change `/etc/hostname` to e.g. `studio` and reboot; UI will be at `studio.local`.
 
 ---
 
 ## Troubleshooting
 
-**`arecord` fails with "Device or resource busy"**  
-Something else is holding the mic. Check `sudo fuser -v /dev/snd/*`. Usually restarting the recorder service fixes it.
+### The setup page keeps asking me to finish — mic / cloud says "not set" even though I saved
 
-**Web UI loads but login always fails**  
-Regenerate the password hash with `scripts/hash_password.py` and make sure you pasted the *entire* hash string into `config.toml` (bcrypt hashes start with `$2b$`).
+Check `journalctl -u audiorec-webapp -n 50`. Two common causes:
 
-**Uploads stuck at "pending_upload"**  
-Check `journalctl -u audiorec-uploader -n 50`. Usual suspects: wrong access key / secret, wrong endpoint URL for the bucket's region, application key not scoped to your bucket (B2), or no internet.
+- **The config file isn't writable.** It must be owned by user `audiorec` with mode `0640` and live in a directory the `audiorec` group can write (`/etc/audiorec` is installed as `root:audiorec 0770`).
+- **sudo is blocked.** After a save the webapp runs `sudo /opt/audiorec/bin/audiorec-setup-helper restart-recorder`. If `/etc/sudoers.d/audiorec` wasn't installed, that call fails silently. Reinstall: `sudo bash scripts/setup.sh`.
 
-**Phone can't reach `audiorec.local`**  
-Some Android phones don't resolve `.local`. Fall back to the IP: find it with `hostname -I` on the Pi.
+### "No USB mic detected" in the wizard
 
-**`comitup` not available from apt**  
-On Raspberry Pi OS Bookworm it's in the default repos. On older releases you may need to install it from Dave Steele's repo — see [the comitup docs](https://davesteele.github.io/comitup/).
+```bash
+arecord -l                # shows all capture cards; look for a non-bcm283x one
+lsusb                     # confirms the mic is enumerated
+sudo dmesg | tail -n 30   # shows USB connect/disconnect events
+```
+
+If `arecord -l` lists it but the wizard doesn't, make sure the card/device name doesn't contain "bcm" (that's filtered out as built-in Pi audio).
+
+### Cloud test says "connection failed"
+
+Usually endpoint URL. Quick sanity:
+
+- **B2**: endpoint must match the region, e.g. `https://s3.us-west-004.backblazeb2.com`. The region is the middle chunk.
+- **R2**: endpoint is `https://<account-id>.r2.cloudflarestorage.com`; region is always `auto`.
+- **Wasabi**: `https://s3.<region>.wasabisys.com`.
+- **DO Spaces**: `https://<region>.digitaloceanspaces.com`.
+
+### Nothing uploads
+
+`journalctl -u audiorec-uploader -n 50`. Most common: the bucket exists but the access key has no write permission — check the key's policy in your provider's console.
+
+### Pi won't auto-start the services on boot
+
+```bash
+systemctl is-enabled audiorec-recorder audiorec-uploader audiorec-webapp
+```
+
+All three should say `enabled`. If not:
+
+```bash
+sudo systemctl enable --now audiorec-recorder audiorec-uploader audiorec-webapp
+```
 
 ---
 
-## Development / running locally (not on a Pi)
+## Development notes
 
-The webapp and uploader run on any Linux or macOS machine with Python 3.11+ and ffmpeg. The recorder needs real GPIO, so for dev you can skip it.
+- Python 3.11+ is assumed (3.14 tested). The code path also works on 3.11/3.12 via `tomli`.
+- Local dev loop:
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+  ```bash
+  python3.11 -m venv .venv && source .venv/bin/activate
+  pip install -r requirements.txt
+  AUDIOREC_CONFIG=$(pwd)/config/config.toml.example PYTHONPATH=src python -m webapp.main
+  ```
 
-export AUDIOREC_CONFIG=$(pwd)/config/dev.toml   # copy from config.toml.example
-export PYTHONPATH=$(pwd)/src
-python -m webapp.main
-python -m uploader.main
-```
+  You won't have GPIO or `arecord` off the Pi, but the webapp + setup wizard can be poked at `http://127.0.0.1:80/setup` (change the port in the config first if 80 is taken).
+
+- The config loader (`src/common/config.py`) is deliberately lenient: a missing file, a missing section, or empty fields all produce a valid `Config` object. The services check `is_audio_configured()` / `is_cloud_configured()` / `is_admin_set()` to decide whether to run or idle.
 
 ---
 
 ## License
 
-MIT.
+MIT. See `LICENSE`.

@@ -1,0 +1,6 @@
+# Installed as /etc/sudoers.d/audiorec by scripts/install.sh.
+# Lets the webapp (running as unprivileged 'audiorec') invoke the tightly
+# scoped setup helper without a password. The helper itself only accepts a
+# known list of sub-commands, so this is the only root door we open.
+
+audiorec ALL=(root) NOPASSWD: /opt/audiorec/bin/audiorec-setup-helper

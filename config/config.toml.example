@@ -1,87 +1,64 @@
-# Audiorec configuration
-# Install this file at /etc/audiorec/config.toml (mode 0600, owned by the audiorec user).
-# Run `scripts/hash_password.py` to generate a web_password_hash.
+# Example /etc/audiorec/config.toml.
+#
+# Normally you DON'T need to edit this by hand -- the web setup wizard at
+# http://audiorec.local/setup writes this file for you. It's here so you
+# know what shape the file takes, and for rare "I lost WiFi, let me fix
+# this via SSH" moments.
+#
+# After hand-editing: sudo systemctl restart audiorec-recorder audiorec-uploader audiorec-webapp
+
+[meta]
+# Flipped to true by the web wizard when the user hits "Finish".
+setup_complete = false
 
 [paths]
-# Where to store the SQLite DB and recorded WAV files.
 data_dir = "/var/lib/audiorec"
 recordings_subdir = "recordings"
 
 [audio]
-# ALSA device for the USB mic. Find with `arecord -l` (look for "card X: ...").
-# e.g. "hw:1,0" means card 1, device 0.
-device = "hw:1,0"
-# Sample rate in Hz. 16000 is speech-grade and tiny; 44100 for music quality.
+# ALSA device id, e.g. "hw:1,0". Find yours with `arecord -l`.
+device = ""
 sample_rate = 16000
-# Channels: 1 = mono, 2 = stereo.
 channels = 1
-# Sample format passed to arecord.
 format = "S16_LE"
 
 [gpio]
-# BCM pin number for the record/stop button (momentary, wired to GND with pull-up).
+# BCM pin numbers. Wire the button between button_pin and GND.
 button_pin = 17
-# BCM pin number for the status LED (optional). Set to 0 to disable.
 led_pin = 18
-# Software debounce in seconds.
 debounce_s = 0.05
-# Long-press duration (seconds) that forces a stop as a safety net.
 long_press_s = 3.0
 
 [upload]
-# How often the uploader polls the DB (seconds).
 poll_interval_s = 5
-# How long to keep the local WAV after successful upload (days). Set to 0 to keep forever.
 local_retention_days = 7
-# Opus bitrate for voice. 24k is excellent for speech; bump to 64k for music.
 opus_bitrate = "24k"
-# Multipart upload part size in MB. Smaller = lower peak RAM.
 multipart_part_size_mb = 5
-# Max retry attempts per file before marking failed.
 max_retries = 10
 
-# S3-compatible object storage. The section is named [wasabi] for historical
-# reasons but works with ANY S3-compatible provider (Backblaze B2, Cloudflare
-# R2, Wasabi, DigitalOcean Spaces, AWS S3, MinIO, ...). Set endpoint_url and
-# region to match your provider.
-[wasabi]
-access_key = "REPLACE_ME"
-secret_key = "REPLACE_ME"
-
-# --- Backblaze B2 (recommended) ---
-# Find the endpoint on your bucket's page, e.g. "s3.us-west-004.backblazeb2.com"
-# Region is the same string after "s3." (e.g. "us-west-004").
-# Create an application key scoped to your bucket at:
-#   https://secure.backblaze.com/app_keys.htm
-endpoint_url = "https://s3.us-west-004.backblazeb2.com"
-region = "us-west-004"
-
-# --- Alternatives (uncomment one set) ---
-# Cloudflare R2 (free up to 10 GB, zero egress):
-#   endpoint_url = "https://<account-id>.r2.cloudflarestorage.com"
-#   region = "auto"
-# Wasabi:
-#   endpoint_url = "https://s3.us-east-1.wasabisys.com"
-#   region = "us-east-1"
-# DigitalOcean Spaces:
-#   endpoint_url = "https://nyc3.digitaloceanspaces.com"
-#   region = "nyc3"
-
-bucket = "REPLACE_ME"
-# Optional key prefix (folder) inside the bucket.
+[cloud]
+# S3-compatible storage. Pick whichever you like; all use the same 6 fields.
+#
+#  Provider          provider    region          endpoint_url
+#  Backblaze B2      "b2"        us-west-004     https://s3.us-west-004.backblazeb2.com
+#  Cloudflare R2     "r2"        auto            https://<account-id>.r2.cloudflarestorage.com
+#  Wasabi            "wasabi"    us-east-1       https://s3.us-east-1.wasabisys.com
+#  DigitalOcean      "do"        nyc3            https://nyc3.digitaloceanspaces.com
+provider = ""
+access_key = ""
+secret_key = ""
+endpoint_url = ""
+region = ""
+bucket = ""
 key_prefix = "recordings/"
 
 [web]
-# Bind address for the FastAPI app. 0.0.0.0 = all interfaces.
 host = "0.0.0.0"
 port = 80
-# Username shown on the login form.
-username = "admin"
-# bcrypt hash. Generate with: python3 scripts/hash_password.py
-password_hash = "REPLACE_ME"
-# Random secret used to sign session cookies. Generate with: openssl rand -hex 32
-session_secret = "REPLACE_ME"
-# Session lifetime in seconds (default: 30 days).
+username = ""
+# bcrypt($password) - the wizard generates this.
+password_hash = ""
+# Random 64-hex-char string; install.sh generates this on first run.
+session_secret = ""
 session_lifetime_s = 2592000
-# mDNS hostname (for display only; the actual name comes from /etc/hostname + avahi).
 hostname = "audiorec.local"

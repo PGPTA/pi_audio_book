@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 from common import db
-from common.config import Config, load_config
+from common.config import Config, is_cloud_configured, load_config
 
 from .encode import EncodeError, wav_to_opus
 from .wasabi import UploadError, WasabiClient
@@ -123,13 +123,24 @@ def main() -> int:
     signal.signal(signal.SIGINT, _graceful)
 
     cfg = load_config()
+
+    if not is_cloud_configured(cfg):
+        log.warning(
+            "Cloud storage not configured. Idling until setup wizard "
+            "(http://%s/setup) finishes.",
+            cfg.web.hostname or "audiorec.local",
+        )
+        while not _stop:
+            time.sleep(1.0)
+        return 0
+
     conn = db.connect(cfg.paths.db_path)
-    wasabi = WasabiClient(cfg.wasabi, part_size_mb=cfg.upload.multipart_part_size_mb)
+    wasabi = WasabiClient(cfg.cloud, part_size_mb=cfg.upload.multipart_part_size_mb)
 
     log.info(
         "Uploader ready. bucket=%s prefix=%s poll=%ds",
-        cfg.wasabi.bucket,
-        cfg.wasabi.key_prefix,
+        cfg.cloud.bucket,
+        cfg.cloud.key_prefix,
         cfg.upload.poll_interval_s,
     )
 

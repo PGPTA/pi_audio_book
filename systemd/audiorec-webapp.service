@@ -13,9 +13,11 @@ Environment=PYTHONUNBUFFERED=1
 Environment=AUDIOREC_CONFIG=/etc/audiorec/config.toml
 ExecStart=/opt/audiorec/venv/bin/python -m webapp.main
 
-# Allow binding port 80 without running as root.
+# Allow binding port 80 without running as root. We intentionally do NOT set
+# CapabilityBoundingSet here because the webapp shells out to sudo during
+# setup (scoped to a single helper via /etc/sudoers.d/audiorec), and sudo
+# needs the full setuid/setgid capabilities to escalate.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 Nice=5
 CPUWeight=75
@@ -25,11 +27,16 @@ RestartSec=3
 StandardOutput=journal
 StandardError=journal
 
-# Hardening
-NoNewPrivileges=true
+# Hardening.
+#
+# NoNewPrivileges MUST be false because the webapp invokes 'sudo' for the
+# setup helper (scoped to a single binary via /etc/sudoers.d/audiorec).
+# ProtectSystem=strict still prevents writes anywhere outside the paths
+# explicitly listed below.
+NoNewPrivileges=false
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/audiorec
+ReadWritePaths=/var/lib/audiorec /etc/audiorec
 PrivateTmp=true
 ProtectKernelTunables=true
 ProtectKernelModules=true

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Small privileged helper invoked by the webapp via sudo during setup.
+#
+# The webapp runs as unprivileged 'audiorec'. This helper is the one and only
+# thing 'audiorec' is allowed to run as root (see /etc/sudoers.d/audiorec),
+# so we keep it tiny and validate every input.
+
+set -euo pipefail
+
+usage() {
+    echo "usage: $0 {restart-recorder|restart-uploader|restart-avahi|set-hostname <name>}" >&2
+    exit 2
+}
+
+cmd="${1:-}"
+case "$cmd" in
+    restart-recorder)
+        systemctl restart audiorec-recorder.service
+        ;;
+    restart-uploader)
+        systemctl restart audiorec-uploader.service
+        ;;
+    restart-avahi)
+        systemctl restart avahi-daemon.service
+        ;;
+    set-hostname)
+        h="${2:-}"
+        if [[ -z "$h" ]]; then
+            echo "set-hostname requires a hostname" >&2
+            exit 2
+        fi
+        # RFC-1123: lowercase letters, digits, hyphens; 1-63 chars; no leading/trailing hyphen.
+        if [[ ! "$h" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+            echo "invalid hostname: $h" >&2
+            exit 2
+        fi
+        hostnamectl set-hostname "$h"
+        awk -v h="$h" '
+            BEGIN { done = 0 }
+            /^127\.0\.1\.1[[:space:]]/ { print "127.0.1.1\t" h; done = 1; next }
+            /^127\.0\.1\.1$/           { print "127.0.1.1\t" h; done = 1; next }
+            { print }
+            END { if (!done) print "127.0.1.1\t" h }
+        ' /etc/hosts > /etc/hosts.audiorec.new
+        mv /etc/hosts.audiorec.new /etc/hosts
+        systemctl restart avahi-daemon.service || true
+        ;;
+    *)
+        usage
+        ;;
+esac

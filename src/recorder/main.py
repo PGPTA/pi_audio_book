@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 from common import db
-from common.config import Config, load_config
+from common.config import Config, is_audio_configured, load_config
 
 
 log = logging.getLogger("audiorec.recorder")
@@ -221,12 +221,38 @@ def _setup_button(cfg: Config, recorder: Recorder) -> None:
 _button_ref: Optional[object] = None
 
 
+def _install_idle_signal_handlers() -> None:
+    """Minimal handlers for the 'awaiting setup' idle state."""
+    def _exit(_signum, _frame):
+        log.info("Idle recorder exiting")
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, _exit)
+    signal.signal(signal.SIGTERM, _exit)
+
+
 def main() -> int:
     logging.basicConfig(
         level=os.environ.get("AUDIOREC_LOG", "INFO"),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     cfg = load_config()
+
+    if not is_audio_configured(cfg):
+        # First-boot / partially configured install. Idle politely until the
+        # webapp finishes setup and asks systemd to restart us with new config.
+        log.warning(
+            "No microphone configured. Waiting for setup wizard "
+            "(http://%s/setup) to finish.",
+            cfg.web.hostname or "audiorec.local",
+        )
+        _install_idle_signal_handlers()
+        try:
+            signal.pause()
+        except KeyboardInterrupt:
+            pass
+        return 0
+
     recorder = Recorder(cfg)
     _install_signal_handlers(recorder)
     _setup_button(cfg, recorder)
