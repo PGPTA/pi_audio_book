@@ -1,10 +1,21 @@
-"""Recorder service: a GPIO button toggles an `arecord` subprocess.
+"""Recorder service: a GPIO switch level controls an `arecord` subprocess.
 
 Design goals:
 - Tiny and robust. If the uploader or webapp crashes, recording keeps working.
 - No audio data is held in Python memory; `arecord` writes the WAV directly to disk.
 - SIGINT (not SIGKILL) on stop so arecord can finalize the WAV header cleanly.
-- Long-press acts as a safety stop in case the toggle state ever drifts.
+- Long-press acts as a safety stop in case state ever drifts.
+
+Button semantics are level-triggered (think slide switch, not toy push-button):
+    GPIO17 LO  -> recording (switch closed to ground, pull-up defeated)
+    GPIO17 HI  -> stopped   (switch open, pull-up pulls the line high)
+
+At boot we deliberately ignore the pin's *current* level and only act on
+transitions. That means a switch accidentally left in the "on" position
+at power-up does NOT silently begin a recording -- the operator has to
+flick it off and then on again before anything happens. gpiozero's
+`when_pressed` / `when_released` are edge-triggered, which gives us
+this behaviour for free.
 
 Run as: `python -m recorder.main` from /opt/audiorec/src (see systemd unit).
 """
@@ -55,8 +66,24 @@ class Recorder:
 
     # --- public API (called by button handler and signal handlers) ---
 
+    def start(self) -> None:
+        """Begin recording if idle. Idempotent: no-op if already recording."""
+        with self._lock:
+            if self._active is None:
+                self._start_locked()
+            else:
+                log.debug("start() called while already recording; ignoring")
+
+    def stop(self) -> None:
+        """Stop the current recording if any. Idempotent: no-op if idle."""
+        with self._lock:
+            if self._active is not None:
+                self._stop_locked()
+            else:
+                log.debug("stop() called while idle; ignoring")
+
     def toggle(self) -> None:
-        """One button press: start if idle, stop if recording."""
+        """Flip state: start if idle, stop if recording. Used by the web UI."""
         with self._lock:
             if self._active is None:
                 self._start_locked()
@@ -201,7 +228,18 @@ def _install_signal_handlers(recorder: Recorder) -> None:
 
 
 def _setup_button(cfg: Config, recorder: Recorder) -> None:
-    """Wire a momentary button to the recorder's toggle/force_stop."""
+    """Wire a latching GPIO switch to the recorder.
+
+    - Pin goes LO (switch closed, button pressed):  start recording
+    - Pin goes HI (switch open,  button released):  stop  recording
+
+    gpiozero's callbacks are edge-triggered, so the *initial* state at
+    process startup doesn't fire anything. That's intentional: if the
+    switch was left in the "on" position when the Pi was powered up,
+    we do not start a recording until the operator has actually
+    flicked it -- first off (HI), then on (LO). Only then does the
+    LO edge trigger a start.
+    """
     from gpiozero import Button  # imported lazily for non-Pi test environments
 
     button = Button(
@@ -210,8 +248,19 @@ def _setup_button(cfg: Config, recorder: Recorder) -> None:
         bounce_time=cfg.gpio.debounce_s,
         hold_time=cfg.gpio.long_press_s,
     )
-    button.when_pressed = lambda: recorder.toggle()
+    button.when_pressed = lambda: recorder.start()   # HI -> LO  (switch on)
+    button.when_released = lambda: recorder.stop()   # LO -> HI  (switch off)
+    # Long-hold is kept as a force-stop safety net in case the switch
+    # ever gets stuck LO and arecord has silently died.
     button.when_held = lambda: recorder.force_stop()
+
+    initial_level = "LO (switch on, recording-armed)" if button.is_pressed else "HI (switch off)"
+    log.info(
+        "Button on GPIO%d ready: level-triggered, current=%s. "
+        "Waiting for a transition before acting.",
+        cfg.gpio.button_pin,
+        initial_level,
+    )
 
     # Keep a reference so the Button isn't garbage-collected.
     global _button_ref
