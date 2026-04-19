@@ -131,10 +131,16 @@ long_press_s = 3.0
 [upload]
 poll_interval_s = 5
 local_retention_days = 7
-opus_bitrate = "32k"
+# Cloud file format: "mp3" (universal, default), "opus" (smallest / best voice
+# quality, but not playable in QuickTime/Windows Media), or "wav" (lossless,
+# ~10 MB/min).
+format = "mp3"
+# Bitrate for lossy formats. 64k MP3 = clean voice; 128k = podcast-tier.
+# Ignored when format = "wav".
+bitrate = "64k"
 multipart_part_size_mb = 5
 max_retries = 10
-# ffmpeg audio filter chain applied before Opus encoding. Kills mains hum,
+# ffmpeg audio filter chain applied before encoding. Kills mains hum,
 # ultrasonic switching noise from the Pi, and constant hiss. Set to ""
 # to disable entirely, or tune - see README "Improving audio quality".
 audio_filters = "highpass=f=80,lowpass=f=8000,afftdn=nr=12"

@@ -32,12 +32,19 @@ long_press_s = 3.0
 [upload]
 poll_interval_s = 5
 local_retention_days = 7
-# Voice-quality Opus bitrate. 24k = intelligible, 32k = clean voice,
-# 48k = near-CD for voice, 64k+ = serious music.
-opus_bitrate = "32k"
+# Cloud file format:
+#   "mp3"  - universally playable on every phone / PC, decent file size (default)
+#   "opus" - smallest files and best voice quality, but NOT playable in
+#            QuickTime, default Windows players, or most email clients
+#   "wav"  - lossless PCM, huge (~10 MB per minute at 16 kHz mono)
+format = "mp3"
+# Bitrate for lossy formats. Ignored when format = "wav".
+#   MP3:  32k = phone-call, 64k = clean voice, 128k = podcast-tier
+#   Opus: 24k = intelligible, 32k = clean voice, 48k = near-CD for voice
+bitrate = "64k"
 multipart_part_size_mb = 5
 max_retries = 10
-# ffmpeg -af filter chain applied before Opus encoding. See README
+# ffmpeg -af filter chain applied before encoding. See README
 # "Improving audio quality" for stronger / weaker presets. "" = no filtering.
 audio_filters = "highpass=f=80,lowpass=f=8000,afftdn=nr=12"
 

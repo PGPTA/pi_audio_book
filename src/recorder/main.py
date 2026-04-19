@@ -240,7 +240,7 @@ def _setup_button(cfg: Config, recorder: Recorder) -> None:
     flicked it -- first off (HI), then on (LO). Only then does the
     LO edge trigger a start.
     """
-    from gpiozero import Button  # imported lazily for non-Pi test environments
+    from gpiozero import Button, Device  # imported lazily for non-Pi test envs
 
     button = Button(
         cfg.gpio.button_pin,
@@ -248,19 +248,110 @@ def _setup_button(cfg: Config, recorder: Recorder) -> None:
         bounce_time=cfg.gpio.debounce_s,
         hold_time=cfg.gpio.long_press_s,
     )
-    button.when_pressed = lambda: recorder.start()   # HI -> LO  (switch on)
-    button.when_released = lambda: recorder.stop()   # LO -> HI  (switch off)
-    # Long-hold is kept as a force-stop safety net in case the switch
-    # ever gets stuck LO and arecord has silently died.
-    button.when_held = lambda: recorder.force_stop()
 
-    initial_level = "LO (switch on, recording-armed)" if button.is_pressed else "HI (switch off)"
+    def _on_pressed() -> None:
+        log.info("GPIO%d edge: HI->LO (switch ON) -> start()", cfg.gpio.button_pin)
+        try:
+            recorder.start()
+        except Exception:
+            log.exception("recorder.start() from edge failed")
+
+    def _on_released() -> None:
+        log.info("GPIO%d edge: LO->HI (switch OFF) -> stop()", cfg.gpio.button_pin)
+        try:
+            recorder.stop()
+        except Exception:
+            log.exception("recorder.stop() from edge failed")
+
+    def _on_held() -> None:
+        log.warning("GPIO%d held >= %.1fs -> force_stop()",
+                    cfg.gpio.button_pin, cfg.gpio.long_press_s)
+        try:
+            recorder.force_stop()
+        except Exception:
+            log.exception("recorder.force_stop() from edge failed")
+
+    button.when_pressed = _on_pressed
+    button.when_released = _on_released
+    button.when_held = _on_held
+
+    pin_factory_name = type(Device.pin_factory).__name__ if Device.pin_factory else "?"
+    initial_level = "LO (switch ON)" if button.is_pressed else "HI (switch OFF)"
     log.info(
-        "Button on GPIO%d ready: level-triggered, current=%s. "
-        "Waiting for a transition before acting.",
-        cfg.gpio.button_pin,
-        initial_level,
+        "Button on GPIO%d ready: pin_factory=%s, level-triggered, initial=%s. "
+        "Edges will be ignored until the switch changes state.",
+        cfg.gpio.button_pin, pin_factory_name, initial_level,
     )
+
+    # Diagnostic watchdog: poll the pin at 2 Hz and log whenever the level
+    # changes without a corresponding edge callback having fired. If the
+    # logs show "poll noticed LO but no edge fired", edge detection is
+    # broken (hardware or lgpio config); if they show nothing at all when
+    # you flick the switch, the pin's simply not moving (wiring issue).
+    def _pin_watchdog() -> None:
+        last = button.is_pressed
+        last_edge_level = last
+        while True:
+            time.sleep(0.5)
+            try:
+                now = button.is_pressed
+            except Exception:
+                return
+            if now != last:
+                log.debug("GPIO%d poll: %s -> %s",
+                          cfg.gpio.button_pin,
+                          "LO" if last else "HI",
+                          "LO" if now else "HI")
+                if now == last_edge_level:
+                    log.warning(
+                        "GPIO%d level changed but no edge callback fired "
+                        "(current=%s, last-edge-saw=%s). "
+                        "Edge detection may be broken.",
+                        cfg.gpio.button_pin,
+                        "LO" if now else "HI",
+                        "LO" if last_edge_level else "HI",
+                    )
+                last = now
+
+    # Tag edge callbacks so the watchdog can tell if they fired.
+    def _tracked_pressed():
+        nonlocal_state["last_edge_level"] = True  # True = pressed (LO)
+        _on_pressed()
+
+    def _tracked_released():
+        nonlocal_state["last_edge_level"] = False  # False = released (HI)
+        _on_released()
+
+    nonlocal_state = {"last_edge_level": button.is_pressed}
+    button.when_pressed = _tracked_pressed
+    button.when_released = _tracked_released
+
+    # Rewire watchdog to consult the shared last_edge_level.
+    def _pin_watchdog_v2() -> None:
+        last_poll = button.is_pressed
+        while True:
+            time.sleep(0.5)
+            try:
+                now = button.is_pressed
+            except Exception:
+                return
+            if now == last_poll:
+                continue
+            log.debug("GPIO%d poll: %s -> %s",
+                      cfg.gpio.button_pin,
+                      "LO" if last_poll else "HI",
+                      "LO" if now else "HI")
+            if nonlocal_state["last_edge_level"] != now:
+                log.warning(
+                    "GPIO%d: poll saw %s but last edge saw %s. "
+                    "Edge callback didn't fire for this transition.",
+                    cfg.gpio.button_pin,
+                    "LO" if now else "HI",
+                    "LO" if nonlocal_state["last_edge_level"] else "HI",
+                )
+            last_poll = now
+
+    threading.Thread(target=_pin_watchdog_v2, name="gpio-watchdog", daemon=True).start()
 
     # Keep a reference so the Button isn't garbage-collected.
     global _button_ref

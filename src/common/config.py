@@ -67,6 +67,14 @@ class GpioConfig:
 class UploadConfig:
     poll_interval_s: int = 5
     local_retention_days: int = 7
+    # Output format for files uploaded to the cloud.
+    #   "mp3"  - universally playable, small (default). 64k = decent voice.
+    #   "opus" - best quality/size for voice but QuickTime/Windows can't play it.
+    #   "wav"  - lossless but huge (~10 MB/min at 16 kHz mono).
+    format: str = "mp3"
+    # Bitrate for lossy formats (opus, mp3). Ignored for wav.
+    bitrate: str = "64k"
+    # Legacy field; still honored if `bitrate` is unset so old configs keep working.
     opus_bitrate: str = "32k"
     multipart_part_size_mb: int = 5
     max_retries: int = 10
@@ -202,6 +210,8 @@ def _serialize(cfg: Config) -> dict:
         "upload": {
             "poll_interval_s": cfg.upload.poll_interval_s,
             "local_retention_days": cfg.upload.local_retention_days,
+            "format": cfg.upload.format,
+            "bitrate": cfg.upload.bitrate,
             "opus_bitrate": cfg.upload.opus_bitrate,
             "multipart_part_size_mb": cfg.upload.multipart_part_size_mb,
             "max_retries": cfg.upload.max_retries,

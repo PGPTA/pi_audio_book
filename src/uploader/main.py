@@ -22,7 +22,7 @@ from pathlib import Path
 from common import db
 from common.config import Config, is_cloud_configured, load_config
 
-from .encode import EncodeError, wav_to_opus
+from .encode import EncodeError, encode_audio, extension_for
 from .wasabi import UploadError, WasabiClient
 
 
@@ -72,18 +72,30 @@ def _process_one(
             db.mark_upload_failed(conn, rec.id, "interrupted during backoff", give_up=False)
             return True
 
-    opus_name = Path(rec.filename).with_suffix(".opus").name
+    fmt = (cfg.upload.format or "mp3").lower()
+    try:
+        ext = extension_for(fmt)
+    except EncodeError as e:
+        log.error("Bad upload.format=%r: %s -- falling back to mp3", fmt, e)
+        fmt, ext = "mp3", ".mp3"
+    # For lossy codecs, prefer new `bitrate` field; fall back to the legacy
+    # opus_bitrate so configs written before this change keep working.
+    bitrate = cfg.upload.bitrate or cfg.upload.opus_bitrate or "64k"
+
+    out_name = Path(rec.filename).with_suffix(ext).name
     try:
         with tempfile.TemporaryDirectory(prefix="audiorec-enc-") as tmp:
-            opus_path = Path(tmp) / opus_name
-            log.info("Encoding %s -> %s", src_wav.name, opus_path.name)
-            wav_to_opus(
+            out_path = Path(tmp) / out_name
+            log.info("Encoding %s -> %s (%s @ %s)",
+                     src_wav.name, out_path.name, fmt, bitrate)
+            encode_audio(
                 src_wav,
-                opus_path,
-                bitrate=cfg.upload.opus_bitrate,
+                out_path,
+                fmt=fmt,
+                bitrate=bitrate,
                 filters=cfg.upload.audio_filters,
             )
-            cloud_key = wasabi.upload(opus_path, opus_name)
+            cloud_key = wasabi.upload(out_path, out_name)
     except EncodeError as e:
         log.exception("Encode failed for %s", rec.id)
         give_up = rec.retry_count + 1 >= cfg.upload.max_retries
