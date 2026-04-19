@@ -7,15 +7,14 @@ Design goals:
 - Long-press acts as a safety stop in case state ever drifts.
 
 Button semantics are level-triggered (think slide switch, not toy push-button):
-    GPIO17 LO  -> recording (switch closed to ground, pull-up defeated)
-    GPIO17 HI  -> stopped   (switch open, pull-up pulls the line high)
+    GPIO17 HI  -> recording (switch open / button not pressed, pull-up wins)
+    GPIO17 LO  -> stopped   (switch closed / button pressed, line pulled to GND)
 
 At boot we deliberately ignore the pin's *current* level and only act on
-transitions. That means a switch accidentally left in the "on" position
-at power-up does NOT silently begin a recording -- the operator has to
-flick it off and then on again before anything happens. gpiozero's
-`when_pressed` / `when_released` are edge-triggered, which gives us
-this behaviour for free.
+transitions. That means even if the pin boots HI we do NOT auto-start --
+the operator has to flick the switch to LO (stop) and back to HI (record)
+before a recording begins. gpiozero's `when_pressed` / `when_released`
+are edge-triggered, which gives us this behaviour for free.
 
 Run as: `python -m recorder.main` from /opt/audiorec/src (see systemd unit).
 """
@@ -230,15 +229,17 @@ def _install_signal_handlers(recorder: Recorder) -> None:
 def _setup_button(cfg: Config, recorder: Recorder) -> None:
     """Wire a latching GPIO switch to the recorder.
 
-    - Pin goes LO (switch closed, button pressed):  start recording
-    - Pin goes HI (switch open,  button released):  stop  recording
+    Inverted active-low hardware, so the semantics are:
+    - Pin at HI (switch open / pull-up wins):       record
+    - Pin at LO (switch closed / pulled to GND):    stop
 
-    gpiozero's callbacks are edge-triggered, so the *initial* state at
-    process startup doesn't fire anything. That's intentional: if the
-    switch was left in the "on" position when the Pi was powered up,
-    we do not start a recording until the operator has actually
-    flicked it -- first off (HI), then on (LO). Only then does the
-    LO edge trigger a start.
+    gpiozero's callbacks are edge-triggered, so the *initial* level at
+    process startup doesn't fire anything. A switch left in either
+    position at power-up is therefore silent until the user actually
+    moves it -- safe default, and it matches the original "wait for a
+    lo-then-hi cycle before acting" requirement: if the pin is HI at
+    boot, you have to flick it LO (stop, no-op) and back to HI (start)
+    before a recording begins.
     """
     from gpiozero import Button, Device  # imported lazily for non-Pi test envs
 
@@ -249,31 +250,37 @@ def _setup_button(cfg: Config, recorder: Recorder) -> None:
         hold_time=cfg.gpio.long_press_s,
     )
 
-    def _on_pressed() -> None:
-        log.info("GPIO%d edge: HI->LO (switch ON) -> start()", cfg.gpio.button_pin)
-        try:
-            recorder.start()
-        except Exception:
-            log.exception("recorder.start() from edge failed")
+    # `when_pressed` fires on the HI->LO edge (button down / switch closed).
+    # `when_released` fires on the LO->HI edge (button up / switch open).
+    # We want HI == record, so those map to stop() / start() respectively.
 
-    def _on_released() -> None:
-        log.info("GPIO%d edge: LO->HI (switch OFF) -> stop()", cfg.gpio.button_pin)
+    def _on_pressed() -> None:
+        log.info("GPIO%d edge: HI->LO (button down / switch OFF) -> stop()",
+                 cfg.gpio.button_pin)
         try:
             recorder.stop()
         except Exception:
             log.exception("recorder.stop() from edge failed")
 
+    def _on_released() -> None:
+        log.info("GPIO%d edge: LO->HI (button up / switch ON) -> start()",
+                 cfg.gpio.button_pin)
+        try:
+            recorder.start()
+        except Exception:
+            log.exception("recorder.start() from edge failed")
+
     button.when_pressed = _on_pressed
     button.when_released = _on_released
-    # No when_held handler: holding LO *is* the normal operating mode of a
-    # latching switch (i.e. "recording"), so firing force_stop() after
-    # long_press_s seconds would truncate every recording at ~3s. The
-    # webapp's SIGUSR2 path remains as a manual abort if something wedges.
+    # No when_held handler: holding HI (or LO) indefinitely is the normal
+    # operating mode of a latching switch; we must not force_stop on a
+    # timer or every recording would be truncated.
 
     pin_factory_name = type(Device.pin_factory).__name__ if Device.pin_factory else "?"
-    initial_level = "LO (switch ON)" if button.is_pressed else "HI (switch OFF)"
+    initial_level = "LO (button DOWN / idle)" if button.is_pressed else "HI (button UP / ready to record)"
     log.info(
-        "Button on GPIO%d ready: pin_factory=%s, level-triggered, initial=%s. "
+        "Button on GPIO%d ready: pin_factory=%s, level-triggered "
+        "(HI=record, LO=stop), initial=%s. "
         "Edges will be ignored until the switch changes state.",
         cfg.gpio.button_pin, pin_factory_name, initial_level,
     )

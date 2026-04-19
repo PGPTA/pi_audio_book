@@ -86,7 +86,17 @@ def _now_iso() -> str:
 def connect(db_path: Path) -> sqlite3.Connection:
     """Open a connection with sensible defaults for embedded use."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path), timeout=30.0, isolation_level=None)
+    # check_same_thread=False: gpiozero fires button callbacks on its own
+    # thread, and the recorder touches the DB from inside those callbacks.
+    # Safe here because every caller holds the Recorder._lock (or is the
+    # uploader's single-threaded main loop) around DB writes, so nothing
+    # is actually racing -- we just need sqlite3 to stop asserting.
+    conn = sqlite3.connect(
+        str(db_path),
+        timeout=30.0,
+        isolation_level=None,
+        check_same_thread=False,
+    )
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
