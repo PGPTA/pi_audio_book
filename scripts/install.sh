@@ -38,7 +38,9 @@ c_info "apt: installing system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends \
-    python3 python3-venv python3-pip \
+    python3 python3-venv python3-pip python3-dev \
+    build-essential swig \
+    liblgpio-dev \
     alsa-utils ffmpeg \
     avahi-daemon \
     ca-certificates \
