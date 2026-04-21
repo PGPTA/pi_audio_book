@@ -56,6 +56,10 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     templates.env.filters["filesizeformat"] = _format_bytes
     templates.env.filters["duration"] = _format_duration
+    # Bumped every time the webapp process (re)starts, so browsers drop cached
+    # CSS/JS after a `git pull` + `systemctl restart`. Templates reference this
+    # via `?v={{ cache_bust }}` on their <link>/<script> tags.
+    templates.env.globals["cache_bust"] = str(int(time.time()))
 
     app = FastAPI(title="Audiorec", docs_url=None, redoc_url=None)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

@@ -1,19 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Recordings - Audiorec{% endblock %}
+{% block title %}Messages - Wedding Phone{% endblock %}
 {% block content %}
 <section>
   <div class="rec-header">
-    <h1>Recordings <span class="sub">({{ total }})</span></h1>
+    <h1>Messages <span class="sub">({{ total }})</span></h1>
     {% if total > 0 %}
       <form method="post" action="/recordings/clear"
-            onsubmit="return confirm('Clear every recording from this Pi?\n\nLocal WAVs and the on-device list will be wiped.\nThe uploaded copies in your cloud bucket are NOT touched.');">
-        <button type="submit" class="danger">Clear all from Pi</button>
+            onsubmit="return confirm('Clear every message from this phone?\n\nLocal copies and the on-device list will be wiped.\nThe saved copies in your cloud bucket are NOT touched.');">
+        <button type="submit" class="danger">Clear all from phone</button>
       </form>
     {% endif %}
   </div>
 
   {% if not items %}
-    <p class="sub">No recordings yet. Flip your switch on to start one.</p>
+    <p class="sub">No messages yet. Lift the handset to record one.</p>
   {% else %}
     <ul class="recordings">
       {% for r in items %}

@@ -3,15 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Audiorec{% endblock %}</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <title>{% block title %}Wedding Phone{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css?v={{ cache_bust }}">
 </head>
 <body>
   <header class="topbar">
-    <a href="/" class="brand">Audiorec</a>
+    <a href="/" class="brand">
+      <span class="brand-mark">&#10084;</span>
+      <span class="brand-text">Wedding Phone</span>
+    </a>
     <nav>
       <a href="/">Dashboard</a>
-      <a href="/recordings">Recordings</a>
+      <a href="/recordings">Messages</a>
       <a href="/setup">Settings</a>
       <form method="post" action="/logout" class="logout-form">
         <button type="submit" class="link-btn">Sign out</button>

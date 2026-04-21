@@ -3,20 +3,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Setup - Audiorec</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <title>Setup - Wedding Phone</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css?v={{ cache_bust }}">
 </head>
 <body>
   <header class="topbar">
-    <span class="brand">Audiorec setup</span>
+    <span class="brand">
+      <span class="brand-mark">&#10084;</span>
+      <span class="brand-text">Wedding Phone setup</span>
+    </span>
     <nav>
       {% if state.setup_complete %}<a href="/">Dashboard</a>{% endif %}
     </nav>
   </header>
 
   <main>
-    <h1>Set up your Pi</h1>
-    <p class="sub">This wizard writes <code>/etc/audiorec/config.toml</code>. You can come back any time to change things.</p>
+    <h1>Set up your Wedding Phone</h1>
+    <p class="sub">A quick wizard to get your guests leaving messages. You can come back any time to change things.</p>
 
     <ol class="wizard" id="wizard">
       <!-- Step 1: admin ------------------------------------------------- -->

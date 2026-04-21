@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Dashboard - Audiorec{% endblock %}
+{% block title %}Dashboard - Wedding Phone{% endblock %}
 {% block content %}
 <section class="dashboard">
   {% if not audio_configured or not cloud_configured %}
@@ -13,12 +13,12 @@
   <div class="status-card {% if current %}active{% endif %}" id="statusCard">
     <div class="dot {% if current %}pulse{% endif %}" id="statusDot"></div>
     <div>
-      <div class="status-label" id="statusLabel">{% if current %}Recording{% else %}Idle{% endif %}</div>
+      <div class="status-label" id="statusLabel">{% if current %}Recording a message{% else %}Ready for guests{% endif %}</div>
       <div class="status-sub" id="statusSub">
         {% if current %}
           Started {{ current.started_at.strftime("%Y-%m-%d %H:%M:%S UTC") }}
         {% else %}
-          Press the button to start recording.
+          Lift the handset (or tap below) to record a message.
         {% endif %}
       </div>
     </div>
@@ -29,14 +29,14 @@
           data-recording="{{ 'true' if current else 'false' }}">
     <span class="toggle-icon"></span>
     <span class="toggle-text">
-      {% if current %}Stop recording{% else %}Start recording{% endif %}
+      {% if current %}Stop message{% else %}Record a message{% endif %}
     </span>
   </button>
 
   <div class="grid">
     <div class="tile">
       <div class="tile-value" id="tileTotal">{{ total }}</div>
-      <div class="tile-label">Total recordings</div>
+      <div class="tile-label">Messages recorded</div>
     </div>
     <div class="tile">
       <div class="tile-value" id="tilePending">{{ pending_count }}</div>
@@ -53,20 +53,20 @@
   </div>
 
   <div class="card">
-    <h2>Last uploaded</h2>
+    <h2>Most recent message</h2>
     {% if last_uploaded %}
       <p><strong>{{ last_uploaded.filename }}</strong></p>
       <p class="sub">
-        at {{ last_uploaded.uploaded_at.strftime("%Y-%m-%d %H:%M:%S UTC") }} -
-        {{ last_uploaded.duration_s | duration }} -
+        saved {{ last_uploaded.uploaded_at.strftime("%Y-%m-%d %H:%M:%S UTC") }} &middot;
+        {{ last_uploaded.duration_s | duration }} &middot;
         {{ last_uploaded.size_bytes | filesizeformat }}
       </p>
     {% else %}
-      <p class="sub">No successful uploads yet.</p>
+      <p class="sub">No messages saved to the cloud yet.</p>
     {% endif %}
   </div>
 
-  <p class="sub">Connect from your phone at <code>http://{{ hostname }}</code> while on the same WiFi.</p>
+  <p class="sub">Open from any phone on the same WiFi at <code>http://{{ hostname }}</code>.</p>
 </section>
 
 <script>
@@ -90,9 +90,9 @@
     dot.classList.toggle('pulse', recording);
     label.textContent = recording ? 'Recording' : 'Idle';
     if (recording) {
-      sub.textContent = 'Recording in progress - press again to stop.';
+      sub.textContent = 'Recording a message - tap again to stop.';
     } else {
-      sub.textContent = 'Press the button to start recording.';
+      sub.textContent = 'Lift the handset (or tap below) to record a message.';
     }
   }
 
