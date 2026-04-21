@@ -22,23 +22,38 @@
             <div class="rec-name">{{ r.filename }}</div>
             <div class="rec-meta">
               {{ r.started_at.strftime("%Y-%m-%d %H:%M:%S UTC") }}
-              - {{ r.duration_s | duration }}
-              - {{ r.size_bytes | filesizeformat }}
-              - <span class="badge">{{ r.status }}</span>
-              {% if r.retry_count > 0 %} - retries: {{ r.retry_count }}{% endif %}
+              &middot; {{ r.duration_s | duration }}
+              &middot; {{ r.size_bytes | filesizeformat }}
+              &middot; <span class="badge">{{ r.status }}</span>
+              {% if r.retry_count > 0 %} &middot; retries: {{ r.retry_count }}{% endif %}
             </div>
+            {% if r.cloud_key %}
+              <audio class="cloud-player"
+                     controls
+                     preload="none"
+                     src="/recordings/{{ r.id }}/cloud">
+                Your browser can't play this audio. Use the download link.
+              </audio>
+            {% elif r.status != "recording" %}
+              <audio class="cloud-player"
+                     controls
+                     preload="none"
+                     src="/recordings/{{ r.id }}/stream">
+                Your browser can't play this audio.
+              </audio>
+            {% endif %}
             {% if r.error %}<div class="rec-error">{{ r.error }}</div>{% endif %}
           </div>
           <div class="rec-actions">
             {% if r.status != "recording" %}
-              <a href="/recordings/{{ r.id }}/stream" target="_blank">Local</a>
+              <a href="/recordings/{{ r.id }}/stream" target="_blank">Download local</a>
             {% endif %}
             {% if r.cloud_key %}
-              <a href="/recordings/{{ r.id }}/cloud" target="_blank">Cloud</a>
+              <a href="/recordings/{{ r.id }}/cloud" target="_blank">Download cloud</a>
             {% endif %}
             {% if r.status not in ("recording", "uploading") %}
               <form method="post" action="/recordings/{{ r.id }}/delete"
-                    onsubmit="return confirm('Delete this recording (local + cloud)?');">
+                    onsubmit="return confirm('Delete this message (local + cloud)?');">
                 <button type="submit" class="danger">Delete</button>
               </form>
             {% endif %}

@@ -365,6 +365,22 @@ button.danger:hover { background: rgba(200, 80, 80, 0.08); }
 .rec-main { flex: 1; min-width: 0; }
 .rec-name { font-weight: 600; word-break: break-all; color: var(--text); }
 .rec-meta { color: var(--muted); font-size: 0.86em; margin-top: 4px; }
+
+.cloud-player {
+  width: 100%;
+  margin-top: 10px;
+  height: 38px;
+  border-radius: 999px;
+  outline: none;
+}
+/* Chrome / Edge / Opera: tint the native control. */
+.cloud-player::-webkit-media-controls-panel {
+  background-color: var(--panel-2);
+}
+.cloud-player::-webkit-media-controls-play-button,
+.cloud-player::-webkit-media-controls-mute-button {
+  filter: hue-rotate(340deg);
+}
 .rec-error {
   color: var(--danger); font-size: 0.85em; margin-top: 6px;
   word-break: break-word;
