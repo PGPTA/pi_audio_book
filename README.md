@@ -2,7 +2,7 @@
 
 A tiny appliance for a **Raspberry Pi Zero 2 WH** that:
 
-- Records from a **USB microphone** when you press a **button** and stops when you press it again.
+- Records from a **USB microphone** while a **switch** is held on (pressed/closed) and stops the moment you release it (open).
 - Saves recordings to the SD card as WAV.
 - In the background, encodes each recording to **Opus** and uploads it to any **S3-compatible** object store (Backblaze B2, Cloudflare R2, Wasabi, DigitalOcean Spaces, AWS S3, MinIO, ...).
 - Serves a **password-protected web UI** you can open on your phone over the local WiFi to see status, start/stop recording without the button, browse and play back recordings.
@@ -50,7 +50,7 @@ The wizard walks you through five small steps:
 
 ### 4. That's it
 
-Press the physical button or the big button on the dashboard to start/stop recording. Your next power cycle will bring everything back automatically — no re-entering credentials, no re-running the wizard.
+Flip the physical switch on (pressed/closed) to record, flip it off to stop. The big button on the dashboard still toggles between start/stop. Your next power cycle will bring everything back automatically — no re-entering credentials, no re-running the wizard.
 
 ---
 
@@ -61,20 +61,20 @@ Press the physical button or the big button on the dashboard to start/stop recor
 | Raspberry Pi Zero 2 WH | quad-core, WiFi, pre-soldered headers |
 | USB microphone | any class-compliant USB mic |
 | microSD card | 16 GB+ (Class 10 / A1 recommended) |
-| Momentary push button (NO) | wired between **GPIO17** and **GND** |
+| Latching switch (or push-and-hold button) | wired between **GPIO17** and **GND** |
 | (optional) 3 mm LED + ~330 Ω resistor | status LED on **GPIO18** |
 | 5 V / 2.5 A USB power supply | |
 
 ### Wiring
 
 ```
-          GPIO17 (pin 11) ----[ push button (momentary) ]---- GND (pin 9)
+          GPIO17 (pin 11) ----[ switch / push-and-hold button ]---- GND (pin 9)
 
 Optional LED:
           GPIO18 (pin 12) ----[330 Ω]----[ LED + ]----[ LED - ]---- GND (pin 6)
 ```
 
-The internal pull-up is enabled in software, so no external resistor is needed for the button. Pressing the button briefly connects GPIO17 to GND, which registers as a press.
+The internal pull-up is enabled in software, so no external resistor is needed. Closing the switch (or holding the button) connects GPIO17 to GND — recording runs for as long as the line is held low, and stops the moment it goes back high.
 
 ---
 
