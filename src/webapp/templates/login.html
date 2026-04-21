@@ -3,24 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sign in - Wedding Phone</title>
+  <title>SIGN IN // WEDDING_PHONE</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css?v={{ cache_bust }}">
 </head>
 <body class="login-page">
   <main class="login-card">
     <div class="brand-stack">
       <span class="brand-mark big">&#10084;</span>
-      <h1>Wedding Phone</h1>
-      <p class="sub">Sign in to continue.</p>
+      <h1>WEDDING_PHONE</h1>
+      <p class="sub">// SIGN IN TO CONTINUE</p>
     </div>
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
     <form method="post" action="/login">
-      <label>Username<input name="username" autocomplete="username" required autofocus></label>
-      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
-      <button type="submit">Sign in</button>
+      <label>USERNAME<input name="username" autocomplete="username" required autofocus></label>
+      <label>PASSWORD<input name="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit">[ SIGN IN ]</button>
     </form>
   </main>
 </body>

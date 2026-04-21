@@ -6,26 +6,44 @@
   <title>{% block title %}Wedding Phone{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css?v={{ cache_bust }}">
 </head>
 <body>
   <header class="topbar">
     <a href="/" class="brand">
       <span class="brand-mark">&#10084;</span>
-      <span class="brand-text">Wedding Phone</span>
+      <span class="brand-text">WEDDING_PHONE</span>
     </a>
+    <div class="topbar-clock" id="topbarClock">&mdash;</div>
     <nav>
-      <a href="/">Dashboard</a>
-      <a href="/recordings">Messages</a>
-      <a href="/setup">Settings</a>
+      <a href="/">HOME</a>
+      <a href="/recordings">MESSAGES</a>
+      <a href="/setup">SETTINGS</a>
       <form method="post" action="/logout" class="logout-form">
-        <button type="submit" class="link-btn">Sign out</button>
+        <button type="submit" class="link-btn">SIGN OUT</button>
       </form>
     </nav>
   </header>
   <main>
     {% block content %}{% endblock %}
   </main>
+
+  <script>
+  (function() {
+    const el = document.getElementById('topbarClock');
+    if (!el) return;
+    const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    function pad(n) { return n < 10 ? '0' + n : '' + n; }
+    function tick() {
+      const d = new Date();
+      const date = MONTHS[d.getMonth()] + ' ' + pad(d.getDate()) + ', ' + d.getFullYear();
+      const time = pad(d.getHours()) + ':' + pad(d.getMinutes());
+      el.innerHTML = date + ' <span class="sep">//</span> ' + time;
+    }
+    tick();
+    setInterval(tick, 30 * 1000);
+  })();
+  </script>
 </body>
 </html>

@@ -1,24 +1,29 @@
 {% extends "base.html" %}
-{% block title %}Dashboard - Wedding Phone{% endblock %}
+{% block title %}HOME // WEDDING_PHONE{% endblock %}
 {% block content %}
 <section class="dashboard">
   {% if not audio_configured or not cloud_configured %}
   <div class="setup-banner">
-    {% if not audio_configured %}Microphone not set. {% endif %}
-    {% if not cloud_configured %}Cloud storage not set. {% endif %}
-    <a href="/setup">Open setup</a>
+    {% if not audio_configured %}MIC NOT SET. {% endif %}
+    {% if not cloud_configured %}CLOUD NOT SET. {% endif %}
+    <a href="/setup">// OPEN SETUP</a>
   </div>
   {% endif %}
+
+  <div class="section-head">
+    <div class="label">STATUS</div>
+    <div class="value">{% if current %}<span style="color: var(--accent);">&bull;</span>&nbsp;LIVE{% else %}<span style="color: var(--muted);">&bull;</span>&nbsp;IDLE{% endif %}</div>
+  </div>
 
   <div class="status-card {% if current %}active{% endif %}" id="statusCard">
     <div class="dot {% if current %}pulse{% endif %}" id="statusDot"></div>
     <div>
-      <div class="status-label" id="statusLabel">{% if current %}Recording a message{% else %}Ready for guests{% endif %}</div>
+      <div class="status-label" id="statusLabel">{% if current %}RECORDING MESSAGE{% else %}READY FOR GUESTS{% endif %}</div>
       <div class="status-sub" id="statusSub">
         {% if current %}
-          Started {{ current.started_at.strftime("%Y-%m-%d %H:%M:%S UTC") }}
+          STARTED {{ current.started_at.strftime("%Y-%m-%d %H:%M:%S UTC") }}
         {% else %}
-          Lift the handset (or tap below) to record a message.
+          LIFT THE HANDSET - OR TAP BELOW - TO RECORD.
         {% endif %}
       </div>
     </div>
@@ -27,46 +32,56 @@
   <button id="toggleBtn"
           class="toggle-btn {% if current %}is-recording{% endif %}"
           data-recording="{{ 'true' if current else 'false' }}">
-    <span class="toggle-icon"></span>
-    <span class="toggle-text">
-      {% if current %}Stop message{% else %}Record a message{% endif %}
+    <span class="toggle-text" id="toggleText">
+      [ {% if current %}STOP&nbsp;&bull;&nbsp;{{ current.started_at.strftime("%H:%M:%S") }}{% else %}REC&nbsp;&bull;&nbsp;MESSAGE{% endif %} ]
     </span>
+    <span class="toggle-icon"></span>
+    <span class="toggle-text-right">[ {% if current %}ACTIVE{% else %}READY{% endif %} ]</span>
   </button>
+
+  <div class="section-head">
+    <div class="label">STATS</div>
+    <div class="value">OVERVIEW</div>
+  </div>
 
   <div class="grid">
     <div class="tile">
-      <div class="tile-value" id="tileTotal">{{ total }}</div>
-      <div class="tile-label">Messages recorded</div>
+      <div class="tile-value" id="tileTotal">{{ "%03d"|format(total) }}</div>
+      <div class="tile-label">MESSAGES</div>
     </div>
     <div class="tile">
-      <div class="tile-value" id="tilePending">{{ pending_count }}</div>
-      <div class="tile-label">Upload queue</div>
+      <div class="tile-value" id="tilePending">{{ "%03d"|format(pending_count) }}</div>
+      <div class="tile-label">UPLOAD QUEUE</div>
     </div>
     <div class="tile {% if failed_count %}warn{% endif %}" id="tileFailedWrap">
-      <div class="tile-value" id="tileFailed">{{ failed_count }}</div>
-      <div class="tile-label">Failed</div>
+      <div class="tile-value" id="tileFailed">{{ "%03d"|format(failed_count) }}</div>
+      <div class="tile-label">FAILED</div>
     </div>
     <div class="tile">
       <div class="tile-value">{{ disk.free | filesizeformat }}</div>
-      <div class="tile-label">Free disk</div>
+      <div class="tile-label">FREE DISK</div>
     </div>
   </div>
 
+  <div class="section-head">
+    <div class="label">LAST MESSAGE</div>
+    <div class="value">CLOUD</div>
+  </div>
+
   <div class="card">
-    <h2>Most recent message</h2>
     {% if last_uploaded %}
       <p><strong>{{ last_uploaded.filename }}</strong></p>
       <p class="sub">
-        saved {{ last_uploaded.uploaded_at.strftime("%Y-%m-%d %H:%M:%S UTC") }} &middot;
+        SAVED {{ last_uploaded.uploaded_at.strftime("%Y-%m-%d %H:%M:%S UTC") }} &middot;
         {{ last_uploaded.duration_s | duration }} &middot;
         {{ last_uploaded.size_bytes | filesizeformat }}
       </p>
     {% else %}
-      <p class="sub">No messages saved to the cloud yet.</p>
+      <p class="sub">NO MESSAGES SAVED TO THE CLOUD YET.</p>
     {% endif %}
   </div>
 
-  <p class="sub">Open from any phone on the same WiFi at <code>http://{{ hostname }}</code>.</p>
+  <p class="sub">// CONNECT FROM ANY PHONE ON THE SAME WIFI AT <code>http://{{ hostname }}</code></p>
 </section>
 
 <script>
@@ -76,23 +91,32 @@
   const label = document.getElementById('statusLabel');
   const sub = document.getElementById('statusSub');
   const dot = document.getElementById('statusDot');
+  const toggleText = document.getElementById('toggleText');
   const tilePending = document.getElementById('tilePending');
   const tileTotal = document.getElementById('tileTotal');
   const tileFailed = document.getElementById('tileFailed');
   const tileFailedWrap = document.getElementById('tileFailedWrap');
 
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function fmt3(n) { return n < 10 ? '00' + n : n < 100 ? '0' + n : '' + n; }
+
   function applyRecordingState(recording) {
     btn.dataset.recording = recording ? 'true' : 'false';
     btn.classList.toggle('is-recording', recording);
-    btn.querySelector('.toggle-text').textContent =
-      recording ? 'Stop recording' : 'Start recording';
+    const d = new Date();
+    const ts = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    toggleText.innerHTML = recording
+      ? '[ STOP &bull; ' + ts + ' ]'
+      : '[ REC &bull; MESSAGE ]';
+    const rightEl = btn.querySelector('.toggle-text-right');
+    if (rightEl) rightEl.textContent = recording ? '[ ACTIVE ]' : '[ READY ]';
     card.classList.toggle('active', recording);
     dot.classList.toggle('pulse', recording);
-    label.textContent = recording ? 'Recording' : 'Idle';
+    label.textContent = recording ? 'RECORDING MESSAGE' : 'READY FOR GUESTS';
     if (recording) {
-      sub.textContent = 'Recording a message - tap again to stop.';
+      sub.textContent = 'RECORDING IN PROGRESS - TAP AGAIN TO STOP.';
     } else {
-      sub.textContent = 'Lift the handset (or tap below) to record a message.';
+      sub.textContent = 'LIFT THE HANDSET - OR TAP BELOW - TO RECORD.';
     }
   }
 
@@ -107,20 +131,19 @@
       });
       if (!r.ok) {
         const txt = await r.text();
-        alert('Toggle failed: ' + (txt || r.status));
+        alert('TOGGLE FAILED: ' + (txt || r.status));
         return;
       }
       const data = await r.json();
       applyRecordingState(!!data.recording);
     } catch (e) {
-      alert('Network error: ' + e);
+      alert('NETWORK ERROR: ' + e);
     } finally {
       btn.disabled = false;
       btn.classList.remove('is-busy');
     }
   });
 
-  // Live status polling so the UI reflects physical-button presses too.
   setInterval(async () => {
     try {
       const r = await fetch('/api/status', {credentials: 'same-origin'});
@@ -130,9 +153,9 @@
       if (!!s.recording !== wasRecording) {
         applyRecordingState(!!s.recording);
       }
-      tilePending.textContent = s.pending;
-      tileTotal.textContent = s.total;
-      tileFailed.textContent = s.failed;
+      tilePending.textContent = fmt3(s.pending);
+      tileTotal.textContent = fmt3(s.total);
+      tileFailed.textContent = fmt3(s.failed);
       tileFailedWrap.classList.toggle('warn', s.failed > 0);
     } catch (_e) { /* ignore transient errors */ }
   }, 3000);
