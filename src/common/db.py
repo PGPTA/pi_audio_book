@@ -304,3 +304,32 @@ def old_uploaded_to_prune(
 def delete_recording(conn: sqlite3.Connection, rec_id: str) -> None:
     with transaction(conn):
         conn.execute("DELETE FROM recordings WHERE id = ?", (rec_id,))
+
+
+def list_clearable(conn: sqlite3.Connection) -> list[Recording]:
+    """All rows that are safe to wipe from the Pi right now.
+
+    Excludes anything still in flight (actively recording or mid-upload) so
+    the user can't yank the rug out from under the recorder or uploader.
+    """
+    rows = conn.execute(
+        """
+        SELECT * FROM recordings
+         WHERE status NOT IN (?, ?)
+         ORDER BY started_at DESC
+        """,
+        (STATUS_RECORDING, STATUS_UPLOADING),
+    ).fetchall()
+    return [Recording.from_row(r) for r in rows]
+
+
+def delete_recordings(conn: sqlite3.Connection, rec_ids: list[str]) -> int:
+    """Bulk-delete DB rows by id. Returns number of rows deleted."""
+    if not rec_ids:
+        return 0
+    placeholders = ",".join("?" * len(rec_ids))
+    with transaction(conn):
+        cur = conn.execute(
+            f"DELETE FROM recordings WHERE id IN ({placeholders})", rec_ids
+        )
+        return cur.rowcount or 0

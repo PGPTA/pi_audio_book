@@ -235,6 +235,39 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         url = client.presign_get(rec.cloud_key, expires_s=300)
         return RedirectResponse(url=url, status_code=status.HTTP_302_FOUND)
 
+    @app.post("/recordings/clear")
+    def clear_recordings(
+        conn=Depends(get_conn),
+        _user: str = Depends(require_user),
+    ):
+        """Wipe every non-in-flight recording from the Pi.
+
+        Deletes the local WAV file (if it hasn't already been pruned) and
+        the SQLite row. Deliberately does NOT touch the cloud object: the
+        Opus copy in the bucket is the canonical archive and must survive.
+        Rows still in `recording` or `uploading` status are left untouched.
+        """
+        cfg = cfg_holder.cfg
+        clearable = db.list_clearable(conn)
+
+        deleted_files = 0
+        for rec in clearable:
+            path = cfg.paths.recordings_dir / rec.filename
+            try:
+                if path.exists():
+                    path.unlink()
+                    deleted_files += 1
+            except OSError:
+                log.exception("Failed to delete local file %s", path)
+
+        deleted_rows = db.delete_recordings(conn, [r.id for r in clearable])
+        log.info(
+            "Clear-all by web user: removed %d rows, %d local WAVs "
+            "(cloud copies left intact)",
+            deleted_rows, deleted_files,
+        )
+        return RedirectResponse(url="/recordings", status_code=status.HTTP_303_SEE_OTHER)
+
     @app.post("/recordings/{rec_id}/delete")
     def delete_recording(
         rec_id: str,
