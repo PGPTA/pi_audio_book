@@ -583,16 +583,33 @@ select:focus,
   font-family: var(--mono);
 }
 
+/* Native audio controls with a high-contrast dark skin. `color-scheme: dark`
+ * tells the UA to render its built-in play/seek/time widgets in their dark
+ * variant, so they stay visible against the panel background. No CSS filter
+ * -- that was washing the controls out on iOS Safari. */
 .cloud-player {
   width: 100%;
-  height: 38px;
+  height: 40px;
   outline: none;
-  border-radius: var(--radius-sm);
-  filter: grayscale(1) invert(0.88) hue-rotate(170deg) saturate(0.25);
-  background: var(--bg-2);
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border-bright);
+  color-scheme: dark;
+  padding: 0;
+  display: block;
 }
+.cloud-player:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+/* Chromium lets us colour the inner panel directly. */
 .cloud-player::-webkit-media-controls-panel {
-  background-color: var(--bg-2);
+  background-color: var(--bg);
+}
+.cloud-player::-webkit-media-controls-current-time-display,
+.cloud-player::-webkit-media-controls-time-remaining-display {
+  color: var(--text-dim);
+  text-shadow: none;
 }
 
 .rec-actions {
