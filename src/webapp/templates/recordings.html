@@ -1,62 +1,69 @@
 {% extends "base.html" %}
-{% block title %}MESSAGES // WEDDING_PHONE{% endblock %}
+{% block title %}messages // wedding.phone{% endblock %}
 {% block content %}
 <section>
   <div class="section-head">
-    <div class="label">MESSAGES &nbsp;<span class="sub">({{ "%03d"|format(total) }})</span></div>
+    <div class="label">messages &middot; {{ total }}</div>
     {% if total > 0 %}
       <form method="post" action="/recordings/clear"
-            onsubmit="return confirm('CLEAR EVERY MESSAGE FROM THIS PHONE?\n\nLOCAL COPIES AND THE ON-DEVICE LIST WILL BE WIPED.\nSAVED COPIES IN THE CLOUD ARE NOT TOUCHED.');">
-        <button type="submit" class="danger">[ CLEAR ALL ]</button>
+            onsubmit="return confirm('Clear every message from this phone?\n\nLocal copies and the on-device list will be wiped.\nSaved copies in the cloud are NOT touched.');">
+        <button type="submit" class="danger">clear phone</button>
       </form>
     {% else %}
-      <div class="value sub">EMPTY</div>
+      <div class="value">empty</div>
     {% endif %}
   </div>
 
   {% if not items %}
-    <p class="sub">// NO MESSAGES YET. LIFT THE HANDSET TO RECORD ONE.</p>
+    <p class="sub">// No messages yet. Lift the handset to record one.</p>
   {% else %}
     <ul class="recordings">
       {% for r in items %}
         <li class="rec-item status-{{ r.status }}">
-          <div class="rec-main">
-            <div class="rec-name">{{ r.filename }}</div>
-            <div class="rec-meta">
-              {{ r.started_at.strftime("%b %d, %Y // %H:%M") | upper }}
-              &nbsp;|&nbsp; {{ r.duration_s | duration }}
-              &nbsp;|&nbsp; {{ r.size_bytes | filesizeformat }}
-              &nbsp;|&nbsp; <span class="badge">{{ r.status }}</span>
-              {% if r.retry_count > 0 %} &nbsp;|&nbsp; RETRIES: {{ r.retry_count }}{% endif %}
+          <div class="rec-top">
+            <div class="rec-main">
+              <div class="rec-name">{{ r.filename }}</div>
+              <div class="rec-meta">
+                <span>{{ r.started_at.strftime("%Y-%m-%d %H:%M") }}</span>
+                <span class="sep">|</span>
+                <span>{{ r.duration_s | duration }}</span>
+                <span class="sep">|</span>
+                <span>{{ r.size_bytes | filesizeformat }}</span>
+                <span class="sep">|</span>
+                <span class="badge">{{ r.status }}</span>
+                {% if r.retry_count > 0 %}<span class="sep">|</span><span>retries {{ r.retry_count }}</span>{% endif %}
+              </div>
+              {% if r.error %}<div class="rec-error">err: {{ r.error }}</div>{% endif %}
             </div>
-            {% if r.cloud_key %}
-              <audio class="cloud-player"
-                     controls
-                     preload="none"
-                     src="/recordings/{{ r.id }}/cloud">
-                YOUR BROWSER CAN'T PLAY THIS AUDIO.
-              </audio>
-            {% elif r.status != "recording" %}
-              <audio class="cloud-player"
-                     controls
-                     preload="none"
-                     src="/recordings/{{ r.id }}/stream">
-                YOUR BROWSER CAN'T PLAY THIS AUDIO.
-              </audio>
-            {% endif %}
-            {% if r.error %}<div class="rec-error">ERR: {{ r.error }}</div>{% endif %}
           </div>
+
+          {% if r.cloud_key %}
+            <audio class="cloud-player"
+                   controls
+                   preload="none"
+                   src="/recordings/{{ r.id }}/cloud">
+              Your browser can't play this audio.
+            </audio>
+          {% elif r.status != "recording" %}
+            <audio class="cloud-player"
+                   controls
+                   preload="none"
+                   src="/recordings/{{ r.id }}/stream">
+              Your browser can't play this audio.
+            </audio>
+          {% endif %}
+
           <div class="rec-actions">
             {% if r.status != "recording" %}
-              <a href="/recordings/{{ r.id }}/stream" target="_blank">[ LOCAL ]</a>
+              <a href="/recordings/{{ r.id }}/stream" target="_blank">local</a>
             {% endif %}
             {% if r.cloud_key %}
-              <a href="/recordings/{{ r.id }}/cloud" target="_blank">[ CLOUD ]</a>
+              <a href="/recordings/{{ r.id }}/cloud" target="_blank">cloud</a>
             {% endif %}
             {% if r.status not in ("recording", "uploading") %}
               <form method="post" action="/recordings/{{ r.id }}/delete"
-                    onsubmit="return confirm('DELETE THIS MESSAGE (LOCAL + CLOUD)?');">
-                <button type="submit" class="danger">[ DEL ]</button>
+                    onsubmit="return confirm('Delete this message (local + cloud)?');">
+                <button type="submit" class="danger">delete</button>
               </form>
             {% endif %}
           </div>
@@ -66,9 +73,9 @@
 
     {% if pages > 1 %}
       <nav class="pager">
-        {% if page > 1 %}<a href="?page={{ page - 1 }}">[ &laquo; PREV ]</a>{% else %}<span></span>{% endif %}
-        <span>PAGE {{ page }} / {{ pages }}</span>
-        {% if page < pages %}<a href="?page={{ page + 1 }}">[ NEXT &raquo; ]</a>{% else %}<span></span>{% endif %}
+        {% if page > 1 %}<a href="?page={{ page - 1 }}">&laquo; prev</a>{% else %}<span></span>{% endif %}
+        <span>page {{ page }} / {{ pages }}</span>
+        {% if page < pages %}<a href="?page={{ page + 1 }}">next &raquo;</a>{% else %}<span></span>{% endif %}
       </nav>
     {% endif %}
   {% endif %}

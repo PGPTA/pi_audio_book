@@ -2,26 +2,27 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0f12">
   <title>{% block title %}Wedding Phone{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css?v={{ cache_bust }}">
 </head>
 <body>
   <header class="topbar">
     <a href="/" class="brand">
       <span class="brand-mark">&#10084;</span>
-      <span class="brand-text">WEDDING_PHONE</span>
+      <span class="brand-text">wedding.phone</span>
     </a>
     <div class="topbar-clock" id="topbarClock">&mdash;</div>
     <nav>
-      <a href="/">HOME</a>
-      <a href="/recordings">MESSAGES</a>
-      <a href="/setup">SETTINGS</a>
+      <a href="/">home</a>
+      <a href="/recordings">msgs</a>
+      <a href="/setup">cfg</a>
       <form method="post" action="/logout" class="logout-form">
-        <button type="submit" class="link-btn">SIGN OUT</button>
+        <button type="submit" class="link-btn">exit</button>
       </form>
     </nav>
   </header>
@@ -33,13 +34,12 @@
   (function() {
     const el = document.getElementById('topbarClock');
     if (!el) return;
-    const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     function pad(n) { return n < 10 ? '0' + n : '' + n; }
     function tick() {
       const d = new Date();
-      const date = MONTHS[d.getMonth()] + ' ' + pad(d.getDate()) + ', ' + d.getFullYear();
+      const date = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
       const time = pad(d.getHours()) + ':' + pad(d.getMinutes());
-      el.innerHTML = date + ' <span class="sep">//</span> ' + time;
+      el.innerHTML = date + '<span class="sep">//</span>' + time;
     }
     tick();
     setInterval(tick, 30 * 1000);

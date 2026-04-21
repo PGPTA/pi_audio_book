@@ -3,27 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SETUP // WEDDING_PHONE</title>
+  <title>setup // wedding.phone</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css?v={{ cache_bust }}">
 </head>
 <body>
   <header class="topbar">
     <span class="brand">
       <span class="brand-mark">&#10084;</span>
-      <span class="brand-text">WEDDING_PHONE // SETUP</span>
+      <span class="brand-text">wedding.phone // setup</span>
     </span>
     <div class="topbar-clock" id="topbarClock">&mdash;</div>
     <nav>
-      {% if state.setup_complete %}<a href="/">HOME</a>{% endif %}
+      {% if state.setup_complete %}<a href="/">home</a>{% endif %}
     </nav>
   </header>
 
   <main>
-    <h1>// Set up your Wedding Phone</h1>
-    <p class="sub">A QUICK WIZARD TO GET YOUR GUESTS LEAVING MESSAGES. YOU CAN COME BACK ANY TIME TO CHANGE THINGS.</p>
+    <h1>Set up your wedding phone</h1>
+    <p class="sub">A quick wizard to get your guests leaving messages. You can come back any time to change things.</p>
 
     <ol class="wizard" id="wizard">
       <!-- Step 1: admin ------------------------------------------------- -->

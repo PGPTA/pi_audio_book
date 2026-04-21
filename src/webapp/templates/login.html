@@ -2,25 +2,26 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SIGN IN // WEDDING_PHONE</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0f12">
+  <title>sign in // wedding.phone</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css?v={{ cache_bust }}">
 </head>
 <body class="login-page">
   <main class="login-card">
     <div class="brand-stack">
       <span class="brand-mark big">&#10084;</span>
-      <h1>WEDDING_PHONE</h1>
-      <p class="sub">// SIGN IN TO CONTINUE</p>
+      <h1>wedding.phone</h1>
+      <p class="sub">// authorize to continue</p>
     </div>
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
     <form method="post" action="/login">
-      <label>USERNAME<input name="username" autocomplete="username" required autofocus></label>
-      <label>PASSWORD<input name="password" type="password" autocomplete="current-password" required></label>
-      <button type="submit">[ SIGN IN ]</button>
+      <label>user<input name="username" autocomplete="username" required autofocus></label>
+      <label>pass<input name="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit">sign in</button>
     </form>
   </main>
 </body>
