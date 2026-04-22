@@ -24,7 +24,7 @@
             <div class="rec-main">
               <div class="rec-name">{{ r.filename }}</div>
               <div class="rec-meta">
-                <span>{{ r.started_at.strftime("%Y-%m-%d %H:%M") }}</span>
+                <span>{{ r.started_at | london('%Y-%m-%d %H:%M') }}</span>
                 <span class="sep">|</span>
                 <span>{{ r.duration_s | duration }}</span>
                 <span class="sep">|</span>

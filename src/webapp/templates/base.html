@@ -33,11 +33,16 @@
   (function() {
     const el = document.getElementById('topbarClock');
     if (!el) return;
-    function pad(n) { return n < 10 ? '0' + n : '' + n; }
+    const FMT = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/London',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    });
     function tick() {
-      const d = new Date();
-      const date = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-      const time = pad(d.getHours()) + ':' + pad(d.getMinutes());
+      const parts = FMT.formatToParts(new Date());
+      const get = t => (parts.find(p => p.type === t) || {}).value || '';
+      const date = get('year') + '-' + get('month') + '-' + get('day');
+      const time = get('hour') + ':' + get('minute');
       el.innerHTML = date + '<span class="sep">//</span>' + time;
     }
     tick();

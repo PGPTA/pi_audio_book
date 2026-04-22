@@ -17,8 +17,16 @@ import shutil
 import signal
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+try:
+    from zoneinfo import ZoneInfo  # 3.9+
+except ImportError:  # pragma: no cover - very old Python
+    ZoneInfo = None  # type: ignore[assignment]
+
+LONDON_TZ = ZoneInfo("Europe/London") if ZoneInfo else None
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
@@ -56,6 +64,7 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     templates.env.filters["filesizeformat"] = _format_bytes
     templates.env.filters["duration"] = _format_duration
+    templates.env.filters["london"] = _format_london
     # Bumped every time the webapp process (re)starts, so browsers drop cached
     # CSS/JS after a `git pull` + `systemctl restart`. Templates reference this
     # via `?v={{ cache_bust }}` on their <link>/<script> tags.
@@ -383,6 +392,24 @@ def _format_bytes(value: Optional[int]) -> str:
             return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
         size /= 1024
     return f"{size:.1f} TB"
+
+
+def _format_london(value: Optional[datetime], fmt: str = "%Y-%m-%d %H:%M") -> str:
+    """Render a UTC (or naive-assumed-UTC) datetime in Europe/London.
+
+    Stored timestamps are always UTC; we convert just for display so the
+    operator reading the Pi from the UK sees BST in summer and GMT in
+    winter automatically. Filenames remain UTC on disk.
+    """
+    if value is None:
+        return "-"
+    if not isinstance(value, datetime):
+        return str(value)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    if LONDON_TZ is not None:
+        value = value.astimezone(LONDON_TZ)
+    return value.strftime(fmt)
 
 
 def _format_duration(seconds: Optional[float]) -> str:
