@@ -835,3 +835,123 @@ select:focus,
   text-decoration: underline;
   font-weight: 600;
 }
+
+/* ------------------------------------------------------------------ */
+/* ASCII art (login heart + dashboard waveform)                        */
+/* ------------------------------------------------------------------ */
+
+/* Reset the generic <pre> styling for our ascii blocks. */
+pre.ascii-art,
+pre.ascii-wave {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: var(--accent);
+  font-family: var(--mono);
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: pre;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  text-align: center;
+}
+
+/* --- Login page heart --- */
+.ascii-art {
+  font-size: 11px;
+  color: var(--accent);
+  text-shadow:
+    0 0 6px var(--accent-glow),
+    0 0 18px rgba(174, 205, 209, 0.12);
+  margin: 4px auto 14px;
+  opacity: 0.92;
+  animation: asciiHeartbeat 1.35s ease-in-out infinite;
+  position: relative;
+}
+.ascii-art::after {
+  /* Vertical CRT scanlines over the art. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(10, 15, 18, 0.0) 0px,
+    rgba(10, 15, 18, 0.0) 2px,
+    rgba(10, 15, 18, 0.35) 3px,
+    rgba(10, 15, 18, 0.0) 4px
+  );
+  mix-blend-mode: multiply;
+}
+@keyframes asciiHeartbeat {
+  0%, 100% { transform: scale(1);    opacity: 0.92; }
+  12%      { transform: scale(1.04); opacity: 1; }
+  22%      { transform: scale(1);    opacity: 0.88; }
+  34%      { transform: scale(1.03); opacity: 0.98; }
+  44%      { transform: scale(1);    opacity: 0.92; }
+}
+@media (min-width: 420px) {
+  .ascii-art { font-size: 12px; }
+}
+
+/* --- Dashboard waveform --- */
+.ascii-wave {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--accent-dim);
+  padding: 14px 12px;
+  margin: 4px 0 -4px;
+  background:
+    linear-gradient(180deg, rgba(174, 205, 209, 0.03), rgba(174, 205, 209, 0)) ,
+    var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  overflow-x: hidden;
+  position: relative;
+  transition: color 0.25s, border-color 0.25s, box-shadow 0.25s;
+}
+.ascii-wave::before {
+  /* Corner tick: LIVE / IDLE indicator */
+  content: "// sig idle";
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--bg-2);
+  padding: 0 6px;
+  pointer-events: none;
+}
+.ascii-wave::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.0) 0px,
+    rgba(0, 0, 0, 0.0) 2px,
+    rgba(0, 0, 0, 0.22) 3px,
+    rgba(0, 0, 0, 0.0) 4px
+  );
+  border-radius: var(--radius-sm);
+}
+.ascii-wave.is-live {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 0 1px var(--accent-dim), 0 0 24px rgba(174, 205, 209, 0.12);
+  text-shadow: 0 0 6px var(--accent-glow);
+}
+.ascii-wave.is-live::before {
+  content: "// sig live";
+  color: var(--accent);
+}
+@media (min-width: 480px) {
+  .ascii-wave { font-size: 14px; padding: 16px 14px; }
+}

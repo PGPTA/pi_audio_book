@@ -13,7 +13,7 @@
 <body class="login-page">
   <main class="login-card">
     <div class="brand-stack">
-      <span class="brand-mark big">&#10084;</span>
+      <pre class="ascii-art" id="asciiHeart" aria-hidden="true"></pre>
       <h1>wedding.phone</h1>
       <p class="sub">// authorize to continue</p>
     </div>
@@ -24,5 +24,73 @@
       <button type="submit">sign in</button>
     </form>
   </main>
+
+  <script>
+  (function() {
+    const el = document.getElementById('asciiHeart');
+    if (!el) return;
+
+    // ASCII heart built from block/shade chars. Each row is the same width so
+    // the shape stays crisp in a monospace font.
+    const FRAMES = [
+      [
+        "  ░▒▓█▓▒░      ░▒▓█▓▒░  ",
+        " ▒▓███████▓▒  ▒▓███████▓▒",
+        "▓█████████████████████████",
+        "▓█████████████████████████",
+        " ▓███████████████████████ ",
+        "  ▒▓███████████████████▒  ",
+        "    ▒▓███████████████▒    ",
+        "      ▒▓███████████▒      ",
+        "        ▒▓███████▒        ",
+        "          ▒▓███▒          ",
+        "            ▒█▒           ",
+        "             ░            ",
+      ],
+      [
+        "  ░▒▓█▓▒░      ░▒▓█▓▒░  ",
+        " ▒▓███████▓░  ░▓███████▓▒",
+        "▓██████████▒░░░▒██████████",
+        "▓█████████████████████████",
+        " ▓███████████████████████ ",
+        "  ▒▓███████████████████▒  ",
+        "    ▒▓█████████████▓▒     ",
+        "      ░▓█████████▓░       ",
+        "        ▒▓█████▓▒         ",
+        "          ░▓█▓░           ",
+        "            ▒▒            ",
+        "             ·            ",
+      ],
+    ];
+
+    // Characters used when randomly corrupting a cell for the glitch effect.
+    const GLITCH = "░▒▓█·-=+*%#@";
+
+    function render(frame, glitchProb) {
+      const out = frame.map(row => {
+        if (Math.random() > glitchProb) return row;
+        // Corrupt 1-2 random chars in this row.
+        const chars = row.split('');
+        const hits = 1 + (Math.random() < 0.3 ? 1 : 0);
+        for (let i = 0; i < hits; i++) {
+          const idx = Math.floor(Math.random() * chars.length);
+          if (chars[idx] === ' ') continue;
+          chars[idx] = GLITCH[Math.floor(Math.random() * GLITCH.length)];
+        }
+        return chars.join('');
+      });
+      el.textContent = out.join('\n');
+    }
+
+    let beat = 0;
+    // Heart-beat: frame A for most of the cycle, frame B briefly (the "lub-dub").
+    setInterval(() => {
+      beat = (beat + 1) % 10;
+      const active = (beat === 0 || beat === 2) ? 1 : 0;
+      render(FRAMES[active], 0.18);
+    }, 120);
+    render(FRAMES[0], 0.18);
+  })();
+  </script>
 </body>
 </html>

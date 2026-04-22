@@ -23,7 +23,7 @@
         {% if current %}
           Message started at {{ current.started_at | london('%H:%M:%S') }}.
         {% else %}
-          Lift the handset or tap record to capture a message.
+          Awaiting signal.
         {% endif %}
       </div>
     </div>
@@ -31,6 +31,8 @@
       {% if current %}&#9210; rec{% else %}&#9210; ready{% endif %}
     </div>
   </div>
+
+  <pre class="ascii-wave" id="asciiWave" aria-hidden="true"></pre>
 
   <button id="toggleBtn"
           class="toggle-btn {% if current %}is-recording{% endif %}"
@@ -40,7 +42,7 @@
       {% if current %}stop message{% else %}record a message{% endif %}
     </span>
     <span class="toggle-text-right" id="toggleSub">
-      {% if current %}live&nbsp;&bull;&nbsp;tap to stop{% else %}press &amp; hold handset{% endif %}
+      {% if current %}live&nbsp;&bull;&nbsp;tap to stop{% else %}stand by{% endif %}
     </span>
   </button>
 
@@ -127,7 +129,7 @@
     if (recording) {
       sub.textContent = 'Message started at ' + londonHMS(new Date()) + '.';
     } else {
-      sub.textContent = 'Lift the handset or tap record to capture a message.';
+      sub.textContent = 'Awaiting signal.';
     }
   }
 
@@ -170,6 +172,70 @@
       tileFailedWrap.classList.toggle('warn', s.failed > 0);
     } catch (_e) { /* transient */ }
   }, 3000);
+
+  // ---- ASCII waveform visualiser -----------------------------------------
+  const wave = document.getElementById('asciiWave');
+  if (wave) {
+    const BARS = "▁▂▃▄▅▆▇█";
+    const COLS = 40;
+    const ROWS = 5;
+
+    function cols() {
+      // Shrink on narrow screens so the glyphs don't wrap.
+      const w = window.innerWidth || 360;
+      return Math.max(20, Math.min(COLS, Math.floor(w / 12)));
+    }
+
+    let phase = 0;
+    function frame() {
+      const recording = btn.dataset.recording === 'true';
+      const n = cols();
+      const amps = new Array(n);
+      for (let i = 0; i < n; i++) {
+        let a;
+        if (recording) {
+          // A couple of overlapping sine waves + jitter = "live mic" look.
+          const base =
+            Math.sin((i * 0.35) + phase * 0.22) * 0.45 +
+            Math.sin((i * 0.12) - phase * 0.17) * 0.30 +
+            Math.sin((i * 0.80) + phase * 0.05) * 0.15;
+          const jitter = (Math.random() - 0.5) * 0.35;
+          a = 0.5 + base * 0.55 + jitter * 0.5;
+        } else {
+          // Idle: almost-flat line with tiny scatter.
+          a = 0.12 + Math.sin((i * 0.25) + phase * 0.05) * 0.05
+                   + (Math.random() - 0.5) * 0.06;
+        }
+        amps[i] = Math.max(0, Math.min(1, a));
+      }
+      // Render as ROWS rows of block glyphs, bottom-aligned.
+      const rows = [];
+      for (let r = 0; r < ROWS; r++) {
+        let line = "";
+        const rowFloor = (ROWS - 1 - r) / ROWS; // bottom row = 0
+        const rowCeil  = (ROWS - r) / ROWS;     // top of this row
+        for (let i = 0; i < n; i++) {
+          const a = amps[i];
+          if (a <= rowFloor) {
+            line += " ";
+          } else if (a >= rowCeil) {
+            line += BARS[BARS.length - 1];
+          } else {
+            const frac = (a - rowFloor) / (rowCeil - rowFloor);
+            const idx = Math.min(BARS.length - 1,
+                                 Math.max(0, Math.floor(frac * BARS.length)));
+            line += BARS[idx];
+          }
+        }
+        rows.push(line);
+      }
+      wave.textContent = rows.join('\n');
+      wave.classList.toggle('is-live', recording);
+      phase += recording ? 1 : 0.4;
+    }
+    setInterval(frame, 90);
+    frame();
+  }
 })();
 </script>
 {% endblock %}
