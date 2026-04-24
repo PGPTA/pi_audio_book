@@ -1,0 +1,48 @@
+[Unit]
+Description=Audiorec - Waveshare 2.13" Touch e-Paper HAT (guest name entry)
+After=multi-user.target
+# We need the recorder up so we can coordinate via the shared DB + name file.
+Wants=audiorec-recorder.service
+After=audiorec-recorder.service
+
+[Service]
+Type=simple
+User=audiorec
+Group=audiorec
+# Needs spi + i2c access; gpio stays in the list because the panel driver
+# also bit-bangs RST/DC/BUSY via gpiozero/lgpio.
+SupplementaryGroups=gpio spi i2c
+WorkingDirectory=/var/lib/audiorec
+
+# Expose vendored Waveshare driver alongside our own package.
+Environment=PYTHONPATH=/opt/audiorec/src:/opt/audiorec/vendor/Touch_e-Paper_HAT/python:/opt/audiorec/vendor/Touch_e-Paper_HAT/python/lib
+Environment=PYTHONUNBUFFERED=1
+Environment=AUDIOREC_CONFIG=/etc/audiorec/config.toml
+Environment=GPIOZERO_PIN_FACTORY=lgpio
+
+ExecStart=/opt/audiorec/venv/bin/python -m display.main
+
+# Restart policy: same as the rest of the stack. Don't hammer the bus if
+# the vendored driver isn't present yet -- main() idles cleanly in that case.
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Hardening (lighter than recorder; we need /dev/spidev* + /dev/i2c-*).
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/audiorec
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+DeviceAllow=/dev/spidev0.0 rw
+DeviceAllow=/dev/spidev0.1 rw
+DeviceAllow=/dev/i2c-1 rw
+DeviceAllow=/dev/gpiochip0 rw
+DeviceAllow=/dev/gpiochip4 rw
+
+[Install]
+WantedBy=multi-user.target

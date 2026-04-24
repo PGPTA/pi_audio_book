@@ -61,20 +61,70 @@ Flip the physical switch on (pressed/closed) to record, flip it off to stop. The
 | Raspberry Pi Zero 2 WH | quad-core, WiFi, pre-soldered headers |
 | USB microphone | any class-compliant USB mic |
 | microSD card | 16 GB+ (Class 10 / A1 recommended) |
-| Latching switch (or push-and-hold button) | wired between **GPIO17** and **GND** |
+| Latching switch (or push-and-hold button) | wired between **GPIO5** and **GND** |
 | (optional) 3 mm LED + ~330 Ω resistor | status LED on **GPIO18** |
+| (optional) Waveshare 2.13" Touch e-Paper HAT | guest name entry — see [Touch e-paper HAT](#touch-e-paper-hat-guest-name-entry) below |
 | 5 V / 2.5 A USB power supply | |
 
 ### Wiring
 
 ```
-          GPIO17 (pin 11) ----[ switch / push-and-hold button ]---- GND (pin 9)
+          GPIO5 (pin 29) -----[ switch / push-and-hold button ]---- GND (pin 30)
 
 Optional LED:
           GPIO18 (pin 12) ----[330 Ω]----[ LED + ]----[ LED - ]---- GND (pin 6)
 ```
 
-The internal pull-up is enabled in software, so no external resistor is needed. Closing the switch (or holding the button) connects GPIO17 to GND — recording runs for as long as the line is held low, and stops the moment it goes back high.
+The internal pull-up is enabled in software, so no external resistor is needed. Closing the switch (or holding the button) connects GPIO5 to GND — recording runs for as long as the line is held low, and stops the moment it goes back high.
+
+> **Upgrading from an older install?** The handset switch used to default to GPIO17. The Waveshare e-paper HAT claims GPIO17 as its RST line, so the default moved to GPIO5. If you've got a switch physically wired to GPIO17 and aren't using the HAT, edit `/etc/audiorec/config.toml` and set `gpio.button_pin = 17` — everything else stays the same.
+
+---
+
+## Touch e-paper HAT (guest name entry)
+
+Optional add-on: a [Waveshare 2.13" Touch e-Paper HAT](https://www.waveshare.com/2.13inch-touch-e-paper-hat.htm) lets each guest tap their name on the screen before picking up the handset. Their recording is then saved as `<name>_<timestamp>.wav` (both locally and in the cloud) instead of the plain `<timestamp>.wav` default.
+
+### Guest flow
+
+1. Screen shows **"touch to begin"**.
+2. Guest taps anywhere → on-screen QWERTY keyboard appears.
+3. They type their name and hit **OK** → screen shows **"pick up the phone, \<name\>"**.
+4. They pick up the handset — recording starts automatically, screen shows **"RECORDING \<name\>"** + live timer.
+5. They hang up — screen shows **"saved. thanks, \<name\>"** for ~5 s, then returns to step 1.
+
+If someone picks up the handset without typing anything the recording still happens, filed as `anonymous_<timestamp>.wav` — the display never blocks the mic.
+
+### Wiring
+
+The HAT is a 40-pin hat and plugs straight onto the Pi's header. It occupies these BCM pins: **10** (MOSI), **11** (SCLK), **8** (CE0), **25** (DC), **17** (RST), **24** (BUSY), **27** (INT), **22** (TRST), **2** (SDA), **3** (SCL).
+
+Your handset switch can live happily on **GPIO5** and the LED on **GPIO18** — neither conflicts with the HAT. If you need to route those through the HAT, use stacking headers or the HAT's 12-pin ribbon instead of plugging the HAT straight on.
+
+### Enabling it
+
+1. Buy the board (the **V4 2023+** revision, matching sticker on the back).
+2. Run the installer: `sudo bash scripts/setup.sh` — it installs the extra apt deps (`python3-pil`, `python3-spidev`, `python3-smbus`), enables SPI + I2C, and clones the Waveshare driver into `/opt/audiorec/vendor/`.
+3. Flip the flag in `/etc/audiorec/config.toml`:
+   ```toml
+   [display]
+   enabled = true
+   panel = "2in13_V4"     # or 2in13_V2 / 2in13_V3 if you've got an older one
+   rotate_deg = 90        # landscape; try 270 if the screen reads upside down
+   ```
+4. Restart the display service: `sudo systemctl restart audiorec-display`.
+5. Tail the log to confirm the HAT came up cleanly: `journalctl -u audiorec-display -f`.
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| Service loops "EPD not available yet" | The vendored driver isn't on disk. Re-run `sudo bash scripts/setup.sh`; check `git` is installed and `https://github.com/waveshare/Touch_e-Paper_HAT` reachable. |
+| Screen stays blank / is ghosted | SPI isn't enabled. Run `sudo raspi-config nonint do_spi 0 && sudo reboot`. |
+| Touches aren't detected | I2C isn't enabled. `sudo raspi-config nonint do_i2c 0 && sudo reboot`. Also check `ls /dev/i2c-*` shows `/dev/i2c-1`. |
+| Keys printed in the wrong places | Screen rotation is wrong. Try `rotate_deg = 270` (or 0/180) in `config.toml`. Touch coords are rotated to match automatically. |
+| Panel shows colours / banding | Wrong panel revision. Check the sticker on the back of the HAT and set `panel` to `2in13_V2`, `2in13_V3`, or `2in13_V4`. |
+| Recorder crashes after plugging HAT | Your old `button_pin = 17` conflicts with the HAT's RST. Set `button_pin = 5` in `/etc/audiorec/config.toml` and restart. |
 
 ---
 
@@ -99,20 +149,24 @@ From that point on, open `http://audiorec.local` from the same network.
  |  - arecord       |     |  audiorec/     |     |  - ffmpeg |
  |  - GPIO button   |     |   recordings/  |     |  - boto3  |
  |  - POSIX signals |     |   recordings.db|     |           |
- +------------------+     +----------------+     +-----------+
-                                   ^
-                                   |
-                           +---------------+
-                           | webapp.service|
-                           |  - FastAPI    |
-                           |  - setup      |
-                           |  - dashboard  |
-                           +---------------+
+ +------------------+     |   current_name |     +-----------+
+         ^                +----------------+
+         |                         ^   ^
+         |                         |   |
+         |                +--------+   +--------+
+         |                |                     |
+ +-----------------+     +---------------+     +------------------+
+ | display.service |---->| webapp.service|     | (uploader above) |
+ |  - e-paper UI   |     |  - FastAPI    |
+ |  - GT1151 touch |     |  - setup      |
+ |  - name writer  |     |  - dashboard  |
+ +-----------------+     +---------------+
 ```
 
-- **recorder** owns an `arecord` subprocess and writes a raw WAV. SIGUSR1 from the webapp acts exactly like a physical button press. If no mic is configured it idles politely until you finish the wizard.
+- **recorder** owns an `arecord` subprocess and writes a raw WAV. SIGUSR1 from the webapp acts exactly like a physical button press. At the start of each recording it reads (and falls back to "anonymous" for) `current_name.txt`, which is how the file ends up as `<name>_<timestamp>.wav`. If no mic is configured it idles politely until you finish the wizard.
 - **uploader** polls SQLite for `pending_upload` rows, encodes WAV→Opus with `ffmpeg`, and streams to the bucket via `boto3` multipart upload (5 MB parts, `max_concurrency=1` to keep RAM low). Idles until cloud creds are set.
 - **webapp** serves the setup wizard, dashboard, and recording list; talks to the recorder via a pidfile + signals; mints short-lived presigned URLs for cloud playback.
+- **display** (optional, see [Touch e-paper HAT](#touch-e-paper-hat-guest-name-entry)) drives the 2.13" touch e-paper screen: renders the keyboard, writes the guest's name into `current_name.txt`, and watches the `recordings` table to step through its own `idle → keyboard → ready → recording → saved` states. Crashes here never stop the mic.
 
 ### How the webapp writes config without being root
 
