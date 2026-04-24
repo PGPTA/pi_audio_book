@@ -116,8 +116,12 @@ class Ctx:
 
 def render_full(ctx: Ctx) -> None:
     w, h = ctx.epd.width, ctx.epd.height
+    touch = ctx.epd.touch_available
     if ctx.state == State.IDLE:
-        img, zones = ui.render_idle(w, h)
+        if touch:
+            img, zones = ui.render_idle(w, h)
+        else:
+            img, zones = ui.render_idle_no_touch(w, h)
     elif ctx.state == State.KEYBOARD:
         img, zones = ui.render_keyboard(w, h, ctx.typed, caret=ctx.caret_on)
     elif ctx.state == State.READY:
@@ -159,6 +163,8 @@ def go(ctx: Ctx, new_state: State) -> None:
 
 def on_touch(ctx: Ctx, x: int, y: int) -> None:
     ctx.last_touch_time = time.monotonic()
+    if not ctx.epd.touch_available:
+        return  # impossible, but defend against it
     if ctx.state == State.IDLE or ctx.state == State.SAVED:
         ctx.typed = ""
         go(ctx, State.KEYBOARD)
@@ -231,13 +237,20 @@ def poll_recording_state(ctx: Ctx) -> None:
         return
 
     if ctx.state == State.IDLE and current is not None:
-        # Someone picked up the handset without typing a name (edge case:
-        # physical switch flipped while idle). The recorder will have
-        # written `anonymous_<ts>.wav`. Surface that so the screen isn't lying.
+        # Someone picked up the handset without typing a name. In display-only
+        # (no-touch) mode this is the *normal* path; in touch mode it's an
+        # edge case (physical switch flipped while idle, no name typed).
+        # Either way the recorder writes `anonymous_<ts>.wav`. Surface that
+        # so the screen isn't lying.
         ctx.typed = "anonymous"
         ctx.active_rec_id = current.id
         ctx.state_entered_at = time.monotonic()
         go(ctx, State.RECORDING)
+        return
+
+    if ctx.state == State.SAVED and not ctx.epd.touch_available:
+        # In kiosk (no-touch) mode there's no way to get out of SAVED via a
+        # tap; the timeout in _tick_loop handles it.
         return
 
 
@@ -268,17 +281,18 @@ def _tick_loop(ctx: Ctx) -> None:
     while not _shutdown.is_set():
         loop_start = time.monotonic()
 
-        # Touch events
-        try:
-            pts = ctx.epd.read_touch()
-        except Exception:
-            log.exception("read_touch failed")
-            pts = []
-        if pts:
-            x, y = pts[0]
-            # Debounce: ignore touches spaced <120ms apart
-            if loop_start - ctx.last_touch_time > 0.12:
-                on_touch(ctx, x, y)
+        # Touch events. Skipped entirely in display-only (no-touch) mode.
+        if ctx.epd.touch_available:
+            try:
+                pts = ctx.epd.read_touch()
+            except Exception:
+                log.exception("read_touch failed")
+                pts = []
+            if pts:
+                x, y = pts[0]
+                # Debounce: ignore touches spaced <120ms apart
+                if loop_start - ctx.last_touch_time > 0.12:
+                    on_touch(ctx, x, y)
 
         now = time.monotonic()
 

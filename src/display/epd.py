@@ -109,14 +109,43 @@ class EPD:
 
         log.info("Opening e-paper panel %s (rot=%d)", self.panel, self.rotate_deg)
         self._epd = panel_mod.EPD()
-        self._tp = gt1151.GT1151()
-        self._gt_dev = gt1151.GT_Development()
-        self._gt_old = gt1151.GT_Development()
-
         self._epd.init(self._epd.FULL_UPDATE)
         self._epd.Clear(0xFF)
-        self._tp.GT_Init()
         self._partial_base_set = False
+
+        # Touch is optional. If the GT1151 doesn't respond on I2C (board has
+        # no touch chip, HAT poorly seated, etc.) we still want the screen
+        # half to come up so the service can run in status-display kiosk
+        # mode. Failures here are demoted to a single warning -- the rest
+        # of the codebase checks `self.touch_available`.
+        try:
+            self._tp = gt1151.GT1151()
+            self._gt_dev = gt1151.GT_Development()
+            self._gt_old = gt1151.GT_Development()
+            self._tp.GT_Init()
+            log.info("Touch controller (GT1151) initialised on I2C")
+        except OSError as e:
+            log.warning(
+                "Touch controller did not respond on I2C (%s). "
+                "Falling back to display-only mode -- screen will still show "
+                "status, but the on-screen keyboard is disabled.",
+                e,
+            )
+            self._tp = None
+            self._gt_dev = None
+            self._gt_old = None
+        except Exception:
+            log.exception(
+                "Unexpected error initialising touch controller; falling back "
+                "to display-only mode."
+            )
+            self._tp = None
+            self._gt_dev = None
+            self._gt_old = None
+
+    @property
+    def touch_available(self) -> bool:
+        return self._tp is not None and self._gt_dev is not None
 
     def close(self) -> None:
         try:

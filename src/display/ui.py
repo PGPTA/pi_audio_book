@@ -110,6 +110,25 @@ def render_idle(width: int, height: int) -> tuple[Image.Image, list[HitZone]]:
     return img, [HitZone("start", 0, 0, width - 1, height - 1)]
 
 
+def render_idle_no_touch(width: int, height: int) -> tuple[Image.Image, list[HitZone]]:
+    """Idle screen for kiosk mode (no touch chip available).
+
+    Rendered when the GT1151 isn't responding -- guests can't enter a name
+    so we drop the keyboard step and just prompt them to lift the handset.
+    Recordings in this mode file as anonymous_<ts>.wav.
+    """
+    img, draw = _new_canvas(width, height)
+    draw.rectangle((0, 0, width - 1, height - 1), outline=BLACK, width=2)
+    draw.rectangle((8, 8, width - 9, height - 9), outline=BLACK, width=1)
+
+    _center_text(draw, (0, 10, width, 46), "wedding.phone", _font(22))
+    _center_text(draw, (0, 42, width, 74), "lift the handset", _font(16))
+    _center_text(draw, (0, 70, width, 100), "to leave a message", _font(14))
+
+    # No hit zones -- nothing's listening to taps in kiosk mode.
+    return img, []
+
+
 # -- Keyboard ---------------------------------------------------------------
 
 _KB_ROW_1 = list("QWERTYUIOP")
