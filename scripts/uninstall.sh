@@ -17,7 +17,7 @@ if [[ "${1:-}" == "--purge" ]]; then
 fi
 
 echo ">>> stopping and disabling services"
-for svc in audiorec-recorder audiorec-uploader audiorec-webapp; do
+for svc in audiorec-recorder audiorec-uploader audiorec-webapp audiorec-display; do
     systemctl disable --now "$svc" 2>/dev/null || true
     rm -f "/etc/systemd/system/${svc}.service"
 done
