@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import signal
 import subprocess
 import sys
@@ -35,38 +34,6 @@ from typing import Optional
 
 from common import db
 from common.config import Config, is_audio_configured, load_config
-
-
-_NAME_SLUG_RE = re.compile(r"[^A-Za-z0-9_-]+")
-
-
-def _slugify_name(raw: str) -> str:
-    """Filesystem-safe token from a display-typed guest name.
-
-    Kept in recorder/ (not just display/) because the recorder is the sole
-    owner of filename generation and still needs to handle a malformed or
-    hand-edited name file without exploding.
-    """
-    cleaned = _NAME_SLUG_RE.sub("_", raw.strip())
-    cleaned = re.sub(r"_+", "_", cleaned).strip("_")
-    return cleaned[:40] or "anonymous"
-
-
-def _read_and_consume_name(name_file: Path) -> str:
-    """Read the current-guest name file. Returns 'anonymous' when absent.
-
-    The file is NOT deleted here -- the display service clears it after it
-    shows the 'saved' screen, which keeps the recording + thank-you UX in
-    lockstep. The recorder just reads the current value each time it starts.
-    """
-    try:
-        raw = name_file.read_text(encoding="utf-8").strip()
-    except FileNotFoundError:
-        return "anonymous"
-    except OSError:
-        log.warning("Could not read name file %s", name_file, exc_info=True)
-        return "anonymous"
-    return _slugify_name(raw)
 
 
 log = logging.getLogger("audiorec.recorder")
@@ -145,8 +112,7 @@ class Recorder:
 
     def _start_locked(self) -> None:
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        name_slug = _read_and_consume_name(self.cfg.paths.current_name_file)
-        filename = f"{name_slug}_{ts}.wav"
+        filename = f"{ts}.wav"
         path = self.cfg.paths.recordings_dir / filename
 
         rec = db.create_recording(self.conn, filename)

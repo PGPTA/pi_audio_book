@@ -12,12 +12,3 @@ bcrypt>=4.1
 boto3>=1.34
 tomli>=2.0; python_version < "3.11"
 tomli-w>=1.0
-
-# --- 2.13" Touch e-Paper HAT (display service) ---
-# Pulled in unconditionally: Pillow is tiny and there's no downside to
-# having it on disk when [display].enabled = false. spidev / smbus2 /
-# numpy are what Waveshare's vendored driver imports under the hood.
-Pillow>=10.0
-spidev>=3.6
-smbus2>=0.4
-numpy>=1.24

@@ -46,17 +46,6 @@ class PathsConfig:
     def db_path(self) -> Path:
         return self.data_dir / "recordings.db"
 
-    @property
-    def current_name_file(self) -> Path:
-        """Plain-text file written by the e-paper display service.
-
-        Contains the name the guest typed on the touch screen. The recorder
-        reads (and consumes) it at the start of each recording so the file
-        gets named after them. If the file is absent the recording is still
-        captured but saved as `anonymous_<timestamp>.wav`.
-        """
-        return self.data_dir / "current_name.txt"
-
 
 @dataclass
 class AudioConfig:
@@ -68,37 +57,10 @@ class AudioConfig:
 
 @dataclass
 class GpioConfig:
-    # Default button_pin is BCM5 because the 2.13" Touch e-Paper HAT claims
-    # BCM17 as its RST line. Existing installs with the switch physically
-    # wired to BCM17 can keep that value in config.toml and leave the HAT
-    # unplugged (or wire the HAT via its 12-pin ribbon to a different RST).
-    button_pin: int = 5
+    button_pin: int = 17
     led_pin: int = 18
     debounce_s: float = 0.05
     long_press_s: float = 3.0
-
-
-@dataclass
-class DisplayConfig:
-    """2.13" Touch e-Paper HAT (Waveshare, GT1151 capacitive touch)."""
-    # Master on/off switch. When false the display service idles quietly
-    # and the recorder falls back to anonymous_<ts>.wav filenames.
-    enabled: bool = False
-    # Revision of the panel. The Waveshare HAT ships as V2, V3 or V4 depending
-    # on when it was bought; V4 is current (Oct 2023+). Pick one that matches
-    # the sticker on the back of your board.
-    panel: str = "2in13_V4"
-    # Display rotation in degrees (0, 90, 180, 270). Landscape (90 or 270)
-    # gives us a 250x122 canvas that fits a QWERTY keyboard comfortably.
-    rotate_deg: int = 90
-    # After a recording finishes we show a "thank you" screen for this many
-    # seconds before falling back to the idle "touch to start" banner.
-    thank_you_seconds: int = 5
-    # Idle screen refresh cadence (seconds). A very slow full refresh every
-    # few minutes keeps the panel from ghosting in idle state.
-    idle_full_refresh_s: int = 600
-    # Max characters the on-screen keyboard will accept for a name.
-    max_name_length: int = 20
 
 
 @dataclass
@@ -157,7 +119,6 @@ class Config:
     upload: UploadConfig = field(default_factory=UploadConfig)
     cloud: CloudConfig = field(default_factory=CloudConfig)
     web: WebConfig = field(default_factory=WebConfig)
-    display: DisplayConfig = field(default_factory=DisplayConfig)
 
     @property
     def wasabi(self) -> CloudConfig:
@@ -195,7 +156,6 @@ def _parse(data: dict) -> Config:
         ("gpio", GpioConfig),
         ("upload", UploadConfig),
         ("web", WebConfig),
-        ("display", DisplayConfig),
     ]:
         section = data.get(section_name)
         if isinstance(section, dict):
@@ -274,14 +234,6 @@ def _serialize(cfg: Config) -> dict:
             "session_secret": cfg.web.session_secret,
             "session_lifetime_s": cfg.web.session_lifetime_s,
             "hostname": cfg.web.hostname,
-        },
-        "display": {
-            "enabled": cfg.display.enabled,
-            "panel": cfg.display.panel,
-            "rotate_deg": cfg.display.rotate_deg,
-            "thank_you_seconds": cfg.display.thank_you_seconds,
-            "idle_full_refresh_s": cfg.display.idle_full_refresh_s,
-            "max_name_length": cfg.display.max_name_length,
         },
     }
 
